@@ -207,6 +207,27 @@ final class ResourceApiTest extends TestCase
             ]);
     }
 
+    public function test_public_chat_info_hides_control_plane_credential_errors(): void
+    {
+        $this->connectedInstallation([
+            'embed_status' => Installation::EMBED_ENABLED,
+        ]);
+
+        Http::fake([
+            'https://control.example.com/api/connect-filament/embed/info*' => Http::response([
+                'detail' => 'Connect installation is missing server credentials',
+            ], 401),
+        ]);
+
+        $this->getJson('/tropikal-connect/api/chat/info')
+            ->assertStatus(503)
+            ->assertExactJson([
+                'error' => 'chat_not_enabled',
+                'message' => 'Website chat is not enabled for this site.',
+            ])
+            ->assertJsonMissing(['detail' => 'Connect installation is missing server credentials']);
+    }
+
     public function test_public_chat_api_routes_use_api_middleware_not_web_sessions(): void
     {
         foreach (['connect-filament.embed.chat.info', 'connect-filament.embed.chat'] as $name) {

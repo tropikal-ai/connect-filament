@@ -85,10 +85,7 @@ class EmbedController extends Controller
     {
         $installation = $this->activeEmbedInstallation();
         if (! $installation) {
-            return response()->json([
-                'error' => 'chat_not_enabled',
-                'message' => 'Website chat is not enabled for this site.',
-            ], 503);
+            return $this->chatUnavailableResponse();
         }
 
         $path = rtrim((string) config('connect-filament.control_plane.embed_proxy_path', '/api/connect-filament/embed'), '/').'/'.$action;
@@ -117,8 +114,12 @@ class EmbedController extends Controller
         return $this->proxyResponse($response->body(), $response->status(), $response->header('Content-Type'));
     }
 
-    private function proxyResponse(string $body, int $status, ?string $contentType): Response
+    private function proxyResponse(string $body, int $status, ?string $contentType): Response|JsonResponse
     {
+        if (in_array($status, [401, 403], true)) {
+            return $this->chatUnavailableResponse();
+        }
+
         $contentType = $contentType ?: 'application/json';
         if (str_contains(strtolower($contentType), 'json')) {
             $payload = json_decode($body, true);
@@ -132,6 +133,15 @@ class EmbedController extends Controller
             'Cache-Control' => 'no-store',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    private function chatUnavailableResponse(): JsonResponse
+    {
+        return response()->json([
+            'error' => 'chat_not_enabled',
+            'message' => 'Website chat is not enabled for this site.',
+        ], 503)->header('Cache-Control', 'no-store')
+            ->header('X-Content-Type-Options', 'nosniff');
     }
 
     private function activeEmbedInstallation(): ?Installation
