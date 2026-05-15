@@ -21,8 +21,8 @@ class ControlPlaneClient
         $payload = [
             'installation_public_id' => $installation->public_id,
             'site_url' => $installation->site_url,
-            'api_base_url' => rtrim((string) $installation->site_url, '/').'/api/'.trim((string) config('connect-filament.api.prefix', 'tropikal-connect'), '/'),
-            'embed_base_url' => rtrim((string) $installation->site_url, '/').'/'.trim((string) config('connect-filament.embed.prefix', 'tropikal-connect'), '/'),
+            'api_base_url' => $this->apiBaseUrl($installation),
+            'embed_base_url' => $this->embedBaseUrl($installation),
             'resources' => $this->declaredResourceSchema(),
         ];
         SensitiveData::assertPublicPayload($payload);
@@ -146,6 +146,26 @@ class ControlPlaneClient
     private function path(string $key): string
     {
         return '/'.ltrim((string) config("connect-filament.control_plane.{$key}", ''), '/');
+    }
+
+    private function apiBaseUrl(Installation $installation): string
+    {
+        $configured = trim((string) config('connect-filament.api.base_url', ''));
+        if ($configured !== '') {
+            return rtrim($configured, '/');
+        }
+
+        return rtrim((string) $installation->site_url, '/').'/api/'.trim((string) config('connect-filament.api.prefix', 'tropikal-connect'), '/');
+    }
+
+    private function embedBaseUrl(Installation $installation): string
+    {
+        $configured = trim((string) config('connect-filament.embed.base_url', ''));
+        if ($configured !== '') {
+            return rtrim($configured, '/');
+        }
+
+        return rtrim((string) $installation->site_url, '/').'/'.trim((string) config('connect-filament.embed.prefix', 'tropikal-connect'), '/');
     }
 
     private function timeout(): int

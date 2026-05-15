@@ -130,12 +130,12 @@ class OAuthClient
 
     public function redirectUri(): string
     {
-        return rtrim($this->siteUrl(), '/').'/'.ltrim((string) config('connect-filament.oauth.redirect_path'), '/');
+        return rtrim($this->redirectBaseUrl(), '/').'/'.ltrim((string) config('connect-filament.oauth.redirect_path'), '/');
     }
 
     public function siteUrl(): string
     {
-        $url = trim((string) config('app.url', ''));
+        $url = trim((string) config('connect-filament.site.url', '')) ?: trim((string) config('app.url', ''));
         if ($url === '') {
             throw new \RuntimeException('The application URL is not configured.');
         }
@@ -149,6 +149,13 @@ class OAuthClient
         if ($url === '') {
             throw new \RuntimeException('The control plane URL is not configured.');
         }
+
+        return rtrim($url, '/');
+    }
+
+    private function redirectBaseUrl(): string
+    {
+        $url = trim((string) config('connect-filament.oauth.redirect_base_url', '')) ?: $this->siteUrl();
 
         return rtrim($url, '/');
     }

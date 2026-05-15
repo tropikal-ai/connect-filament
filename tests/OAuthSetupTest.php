@@ -20,6 +20,8 @@ final class OAuthSetupTest extends TestCase
 
     public function test_connect_route_starts_pkce_flow(): void
     {
+        config()->set('connect-filament.site.url', 'https://example.com');
+        config()->set('connect-filament.oauth.redirect_base_url', 'https://cms.example.com');
         Http::fake([
             'https://auth.example.com/oauth/register' => Http::response(['client_id' => 'client_123']),
         ]);
@@ -38,6 +40,11 @@ final class OAuthSetupTest extends TestCase
         $this->assertNotSame('', $plainVerifier);
         $this->assertNotSame($plainVerifier, $storedVerifier);
         $this->assertNotNull($installation->oauth_state_hash);
+        $this->assertSame('https://example.com', $installation->site_url);
+
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'https://auth.example.com/oauth/register'
+            && $request['client_uri'] === 'https://example.com'
+            && $request['redirect_uris'] === ['https://cms.example.com/tropikal-connect/oauth/callback']);
     }
 
     public function test_callback_rejects_missing_invalid_expired_state_and_wrong_redirect_uri(): void
@@ -77,9 +84,13 @@ final class OAuthSetupTest extends TestCase
 
     public function test_successful_callback_stores_encrypted_refresh_credential_and_safe_registration_payload(): void
     {
+        config()->set('connect-filament.site.url', 'https://example.com');
+        config()->set('connect-filament.oauth.redirect_base_url', 'https://cms.example.com');
+        config()->set('connect-filament.api.base_url', 'https://api.example.com/api/tropikal-connect');
+        config()->set('connect-filament.embed.base_url', 'https://example.com/tropikal-connect');
         $state = OAuthState::generate();
         $installation = Installation::query()->create([
-            'site_url' => 'https://cms.example.com',
+            'site_url' => 'https://example.com',
             'control_plane_url' => 'https://control.example.com',
             'oauth_client_id' => 'client_123',
             'oauth_state_hash' => $state->hash,
@@ -130,6 +141,9 @@ final class OAuthSetupTest extends TestCase
             $payload = $request->data();
 
             return isset($payload['installation_public_id'], $payload['resources'])
+                && $payload['site_url'] === 'https://example.com'
+                && $payload['api_base_url'] === 'https://api.example.com/api/tropikal-connect'
+                && $payload['embed_base_url'] === 'https://example.com/tropikal-connect'
                 && ! isset($payload['access_token'], $payload['refresh_token'], $payload['server_signing_key']);
         });
     }

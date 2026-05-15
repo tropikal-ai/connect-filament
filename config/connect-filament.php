@@ -18,10 +18,15 @@ return [
         'after_connect_url' => env('CONNECT_FILAMENT_AFTER_CONNECT_URL'),
     ],
 
+    'site' => [
+        'url' => env('CONNECT_FILAMENT_SITE_URL', env('APP_URL')),
+    ],
+
     'oauth' => [
         'authorization_server_url' => env('CONNECT_FILAMENT_AUTHORIZATION_SERVER_URL', ''),
         'client_id' => env('CONNECT_FILAMENT_OAUTH_CLIENT_ID', ''),
         'client_name' => env('CONNECT_FILAMENT_OAUTH_CLIENT_NAME', ''),
+        'redirect_base_url' => env('CONNECT_FILAMENT_OAUTH_REDIRECT_BASE_URL', env('APP_URL')),
         'redirect_path' => env('CONNECT_FILAMENT_OAUTH_REDIRECT_PATH', '/tropikal-connect/oauth/callback'),
         'scopes' => env('CONNECT_FILAMENT_OAUTH_SCOPES', 'example:install'),
         'resource' => env('CONNECT_FILAMENT_OAUTH_RESOURCE', ''),
@@ -45,6 +50,7 @@ return [
 
     'api' => [
         'prefix' => env('CONNECT_FILAMENT_API_PREFIX', 'tropikal-connect'),
+        'base_url' => env('CONNECT_FILAMENT_API_BASE_URL'),
         'signature_tolerance_seconds' => (int) env('CONNECT_FILAMENT_SIGNATURE_TOLERANCE_SECONDS', 300),
         'nonce_cache_seconds' => (int) env('CONNECT_FILAMENT_NONCE_CACHE_SECONDS', 300),
     ],
@@ -52,6 +58,7 @@ return [
     'embed' => [
         'enabled' => (bool) env('CONNECT_FILAMENT_EMBED_ENABLED', true),
         'prefix' => env('CONNECT_FILAMENT_EMBED_PREFIX', 'tropikal-connect'),
+        'base_url' => env('CONNECT_FILAMENT_EMBED_BASE_URL'),
         'asset_cache_seconds' => (int) env('CONNECT_FILAMENT_EMBED_ASSET_CACHE_SECONDS', 300),
         'asset_rewrite_prefixes' => [],
     ],
