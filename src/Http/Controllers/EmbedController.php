@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace TropikalAI\ConnectFilament\Http\Controllers;
 
+use Illuminate\Http\Client\Response as ClientResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
 use TropikalAI\ConnectFilament\Models\Installation;
+use TropikalAI\ConnectFilament\Services\ControlPlaneClient;
 
 class EmbedController extends Controller
 {
@@ -71,17 +74,17 @@ class EmbedController extends Controller
             ->header('X-Content-Type-Options', 'nosniff');
     }
 
-    public function chatInfo(Request $request): Response|JsonResponse
+    public function chatInfo(Request $request, ControlPlaneClient $controlPlane): Response|JsonResponse
     {
-        return $this->proxy($request, 'GET', 'info', '');
+        return $this->proxy($request, $controlPlane, 'GET', 'info', '');
     }
 
-    public function chat(Request $request): Response|JsonResponse
+    public function chat(Request $request, ControlPlaneClient $controlPlane): Response|JsonResponse
     {
-        return $this->proxy($request, 'POST', 'chat', $request->getContent() ?: '');
+        return $this->proxy($request, $controlPlane, 'POST', 'chat', $request->getContent() ?: '');
     }
 
-    private function proxy(Request $request, string $method, string $action, string $body): Response|JsonResponse
+    private function proxy(Request $request, ControlPlaneClient $controlPlane, string $method, string $action, string $body): Response|JsonResponse
     {
         $installation = $this->activeEmbedInstallation();
         if (! $installation) {
@@ -90,6 +93,20 @@ class EmbedController extends Controller
 
         $path = rtrim((string) config('connect-filament.control_plane.embed_proxy_path', '/api/connect-filament/embed'), '/').'/'.$action;
         $query = $request->getQueryString() ?? '';
+        $response = $this->proxyRequest($request, $installation, $method, $path, $query, $body);
+
+        if ($this->shouldRepairRegistration($response)) {
+            $installation = $this->repairRegistration($installation, $controlPlane);
+            if ($installation?->isApiReady()) {
+                $response = $this->proxyRequest($request, $installation, $method, $path, $query, $body);
+            }
+        }
+
+        return $this->proxyResponse($response->body(), $response->status(), $response->header('Content-Type'));
+    }
+
+    private function proxyRequest(Request $request, Installation $installation, string $method, string $path, string $query, string $body): ClientResponse
+    {
         $headers = SignedRequest::headers(
             (string) $installation->server_signing_key_encrypted,
             (string) $installation->public_id,
@@ -107,11 +124,33 @@ class EmbedController extends Controller
             ]);
 
         $url = $this->controlPlaneUrl().$path.($query !== '' ? '?'.$query : '');
-        $response = $method === 'POST'
+
+        return $method === 'POST'
             ? $client->withBody($body, $request->header('Content-Type', 'application/json'))->post($url)
             : $client->get($url);
+    }
 
-        return $this->proxyResponse($response->body(), $response->status(), $response->header('Content-Type'));
+    private function shouldRepairRegistration(ClientResponse $response): bool
+    {
+        return in_array($response->status(), [401, 403], true);
+    }
+
+    private function repairRegistration(Installation $installation, ControlPlaneClient $controlPlane): ?Installation
+    {
+        try {
+            $controlPlane->syncCapabilities($installation);
+
+            $installation->refresh();
+
+            return $installation;
+        } catch (\Throwable $exception) {
+            Log::warning('Connect embed registration repair failed.', [
+                'installation_id' => $installation->public_id,
+                'exception' => $exception::class,
+            ]);
+
+            return null;
+        }
     }
 
     private function proxyResponse(string $body, int $status, ?string $contentType): Response|JsonResponse
