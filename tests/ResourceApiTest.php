@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace TropikalAI\ConnectFilament\Tests;
 
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use TropikalAI\Connect\Domain\Security\SensitiveData;
+use TropikalAI\Connect\Domain\Security\SignedRequest;
 use TropikalAI\ConnectFilament\Models\AuditLog;
 use TropikalAI\ConnectFilament\Tests\Fixtures\Post;
 
@@ -144,5 +147,65 @@ final class ResourceApiTest extends TestCase
         SensitiveData::assertPublicPayload($payload);
         $this->assertArrayNotHasKey('oauth_refresh_token_encrypted', $payload);
         $this->assertArrayNotHasKey('server_signing_key_encrypted', $payload);
+    }
+
+    public function test_public_chat_embed_asset_is_rewritten_to_configured_prefix(): void
+    {
+        config()->set('connect-filament.embed.asset_rewrite_prefixes', ['/legacy-connect']);
+
+        Http::fake([
+            'https://control.example.com/embed/chat-widget.js' => Http::response(
+                "fetch('/legacy-connect/api/chat/info');",
+                200,
+                ['Content-Type' => 'application/javascript; charset=utf-8'],
+            ),
+        ]);
+
+        $this->get('/tropikal-connect/embed/chat-widget.js')
+            ->assertOk()
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertSee('/tropikal-connect/api/chat/info', false)
+            ->assertDontSee('/legacy-connect', false);
+    }
+
+    public function test_public_chat_info_returns_not_enabled_without_connected_embed(): void
+    {
+        $this->getJson('/tropikal-connect/api/chat/info')
+            ->assertStatus(503)
+            ->assertExactJson([
+                'error' => 'chat_not_enabled',
+                'message' => 'Website chat is not enabled for this site.',
+            ]);
+    }
+
+    public function test_public_chat_info_proxies_with_signed_connect_request(): void
+    {
+        $installation = $this->connectedInstallation([
+            'embed_status' => 'enabled',
+        ]);
+
+        Http::fake([
+            'https://control.example.com/api/connect-filament/embed/info*' => Http::response([
+                'display_name' => 'Example Front Desk',
+                'avatar_url' => 'https://example.com/avatar.png',
+                'welcome_message' => 'Hi.',
+                'theme' => ['name' => 'tropikal'],
+                'capability_disclosures' => [],
+            ]),
+        ]);
+
+        $this->getJson('/tropikal-connect/api/chat/info?b=2&a=1', [
+            'X-Embed-Origin' => 'https://cms.example.com',
+        ])->assertOk()
+            ->assertJsonPath('display_name', 'Example Front Desk');
+
+        Http::assertSent(function (Request $request) use ($installation): bool {
+            return $request->url() === 'https://control.example.com/api/connect-filament/embed/info?a=1&b=2'
+                && $request->hasHeader(SignedRequest::INSTALLATION_HEADER, (string) $installation->public_id)
+                && $request->hasHeader(SignedRequest::SIGNATURE_HEADER)
+                && $request->hasHeader(SignedRequest::BODY_HASH_HEADER, hash('sha256', ''))
+                && $request->hasHeader('X-Embed-Origin', 'https://cms.example.com')
+                && ! $request->hasHeader('Authorization');
+        });
     }
 }

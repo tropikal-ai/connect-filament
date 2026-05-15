@@ -38,6 +38,8 @@ return [
         'register_path' => env('CONNECT_FILAMENT_CONTROL_PLANE_REGISTER_PATH', '/api/connect-filament/installations'),
         'disconnect_path' => env('CONNECT_FILAMENT_CONTROL_PLANE_DISCONNECT_PATH', '/api/connect-filament/installations/disconnect'),
         'embed_status_path' => env('CONNECT_FILAMENT_CONTROL_PLANE_EMBED_STATUS_PATH', '/api/connect-filament/embed/active'),
+        'embed_proxy_path' => env('CONNECT_FILAMENT_CONTROL_PLANE_EMBED_PROXY_PATH', '/api/connect-filament/embed'),
+        'embed_asset_path' => env('CONNECT_FILAMENT_CONTROL_PLANE_EMBED_ASSET_PATH', '/embed'),
         'timeout_seconds' => (int) env('CONNECT_FILAMENT_CONTROL_PLANE_TIMEOUT_SECONDS', 20),
     ],
 
@@ -51,6 +53,7 @@ return [
         'enabled' => (bool) env('CONNECT_FILAMENT_EMBED_ENABLED', true),
         'prefix' => env('CONNECT_FILAMENT_EMBED_PREFIX', 'tropikal-connect'),
         'asset_cache_seconds' => (int) env('CONNECT_FILAMENT_EMBED_ASSET_CACHE_SECONDS', 300),
+        'asset_rewrite_prefixes' => [],
     ],
 
     'resources' => [],
