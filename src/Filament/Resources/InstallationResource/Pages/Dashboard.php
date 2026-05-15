@@ -70,6 +70,12 @@ class Dashboard extends Page
                 ->label('Refresh status')
                 ->action('sync')
                 ->visible(fn (): bool => (bool) $this->installation?->isConnected()),
+            Action::make('website')
+                ->label('Website detail')
+                ->icon('heroicon-o-arrow-top-right-on-square')
+                ->url(fn (): ?string => $this->installation?->websiteDetailUrl())
+                ->openUrlInNewTab()
+                ->visible(fn (): bool => (bool) $this->installation?->isConnected() && filled($this->installation?->websiteDetailUrl())),
             Action::make('disconnect')
                 ->label('Disconnect')
                 ->requiresConfirmation()

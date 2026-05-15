@@ -139,7 +139,6 @@ class EmbedController extends Controller
         /** @var Installation|null $installation */
         $installation = Installation::query()
             ->where('status', Installation::STATUS_CONNECTED)
-            ->where('embed_status', Installation::EMBED_ENABLED)
             ->orderByDesc('updated_at')
             ->first();
 

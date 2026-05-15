@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Http;
 use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
 use TropikalAI\ConnectFilament\Models\AuditLog;
+use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Tests\Fixtures\Post;
 
 final class ResourceApiTest extends TestCase
@@ -138,6 +139,11 @@ final class ResourceApiTest extends TestCase
             'workspace_id' => 'workspace_123',
             'embed_status' => 'enabled',
             'embed_public_id' => 'embed_123',
+            'settings' => [
+                'website' => [
+                    'detail_url' => 'https://website.example.com/websites/website_123',
+                ],
+            ],
         ]);
 
         $payload = $this->getJson(route('connect-filament.embed.info'))
@@ -145,6 +151,8 @@ final class ResourceApiTest extends TestCase
             ->json();
 
         SensitiveData::assertPublicPayload($payload);
+        $this->assertSame('https://website.example.com/websites/website_123', $payload['website']['detail_url']);
+        $this->assertArrayNotHasKey('workspace_id', $payload['account']);
         $this->assertArrayNotHasKey('oauth_refresh_token_encrypted', $payload);
         $this->assertArrayNotHasKey('server_signing_key_encrypted', $payload);
     }
@@ -207,5 +215,28 @@ final class ResourceApiTest extends TestCase
                 && $request->hasHeader('X-Embed-Origin', 'https://cms.example.com')
                 && ! $request->hasHeader('Authorization');
         });
+    }
+
+    public function test_public_chat_info_uses_control_plane_when_local_embed_status_is_stale(): void
+    {
+        $installation = $this->connectedInstallation([
+            'embed_status' => Installation::EMBED_NOT_ENABLED,
+        ]);
+
+        Http::fake([
+            'https://control.example.com/api/connect-filament/embed/info*' => Http::response([
+                'display_name' => 'Example Front Desk',
+                'welcome_message' => 'Hi.',
+                'theme' => ['name' => 'tropikal'],
+                'capability_disclosures' => [],
+            ]),
+        ]);
+
+        $this->getJson('/tropikal-connect/api/chat/info')
+            ->assertOk()
+            ->assertJsonPath('display_name', 'Example Front Desk');
+
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'https://control.example.com/api/connect-filament/embed/info'
+            && $request->hasHeader(SignedRequest::INSTALLATION_HEADER, (string) $installation->public_id));
     }
 }

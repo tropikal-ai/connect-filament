@@ -8,8 +8,8 @@
                 <p class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{{ str_replace('_', ' ', (string) $status['status']) }}</p>
             </div>
             <div>
-                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Workspace</p>
-                <p class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">{{ $status['account']['workspace_id'] ?? 'Not connected' }}</p>
+                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Website</p>
+                <p class="mt-1 truncate text-lg font-semibold text-gray-950 dark:text-white">{{ $status['website']['url'] ?? 'Not connected' }}</p>
             </div>
             <div>
                 <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Resources</p>

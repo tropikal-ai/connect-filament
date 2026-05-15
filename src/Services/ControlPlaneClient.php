@@ -101,6 +101,7 @@ class ControlPlaneClient
 
         $account = is_array($body['account'] ?? null) ? $body['account'] : [];
         $embed = is_array($body['embed'] ?? null) ? $body['embed'] : [];
+        $website = $this->websiteSettingsFromResponse($body);
 
         $installation->forceFill([
             'status' => Installation::STATUS_CONNECTED,
@@ -119,8 +120,35 @@ class ControlPlaneClient
             'last_synced_at' => now(),
             'settings' => [
                 'resource_count' => count($body['allowed_resources'] ?? []),
+                'website' => $website,
             ],
         ])->save();
+    }
+
+    private function websiteSettingsFromResponse(array $body): array
+    {
+        $connection = is_array($body['website_connection'] ?? null) ? $body['website_connection'] : [];
+
+        return array_filter([
+            'id' => $this->stringOrNull($connection['id'] ?? null),
+            'name' => $this->stringOrNull($connection['name'] ?? null),
+            'detail_url' => $this->urlOrNull($connection['detail_url'] ?? null),
+        ], fn (mixed $value): bool => $value !== null);
+    }
+
+    private function stringOrNull(mixed $value): ?string
+    {
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function urlOrNull(mixed $value): ?string
+    {
+        $url = $this->stringOrNull($value);
+        if ($url === null) {
+            return null;
+        }
+
+        return in_array(parse_url($url, PHP_URL_SCHEME), ['http', 'https'], true) ? $url : null;
     }
 
     private function declaredResourceSchema(): array

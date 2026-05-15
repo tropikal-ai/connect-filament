@@ -122,7 +122,10 @@ class Installation extends Model
             'status' => $this->status ?: self::STATUS_NOT_CONNECTED,
             'account' => [
                 'email' => $this->account_email,
-                'workspace_id' => $this->workspace_id,
+            ],
+            'website' => [
+                'url' => $this->site_url,
+                'detail_url' => $this->websiteDetailUrl(),
             ],
             'site' => [
                 'url' => $this->site_url,
@@ -144,6 +147,15 @@ class Installation extends Model
         SensitiveData::assertPublicPayload($payload);
 
         return $payload;
+    }
+
+    public function websiteDetailUrl(): ?string
+    {
+        $settings = is_array($this->settings) ? $this->settings : [];
+        $website = is_array($settings['website'] ?? null) ? $settings['website'] : [];
+        $url = $website['detail_url'] ?? null;
+
+        return is_string($url) && in_array(parse_url($url, PHP_URL_SCHEME), ['http', 'https'], true) ? $url : null;
     }
 
     public static function embedSnippet(?string $prefix = null): string
