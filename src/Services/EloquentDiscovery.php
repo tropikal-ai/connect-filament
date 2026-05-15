@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use ReflectionClass;
+use Throwable;
 use TropikalAI\Connect\Domain\Security\SensitiveData;
 
 class EloquentDiscovery
@@ -118,21 +119,37 @@ class EloquentDiscovery
 
     private function isDiscoverableModel(string $class): bool
     {
-        if (! class_exists($class) || ! is_subclass_of($class, Model::class)) {
-            return false;
-        }
-        if (is_subclass_of($class, Authenticatable::class)) {
-            return false;
-        }
         if (in_array($class, (array) config('connect-filament.discovery.excluded_model_classes', []), true)) {
             return false;
         }
 
-        $reflection = new ReflectionClass($class);
+        if (! $this->matchesIncludedNamespace($class)) {
+            return false;
+        }
+
+        try {
+            if (! class_exists($class) || ! is_subclass_of($class, Model::class)) {
+                return false;
+            }
+
+            if (is_subclass_of($class, Authenticatable::class)) {
+                return false;
+            }
+
+            $reflection = new ReflectionClass($class);
+        } catch (Throwable) {
+            return false;
+        }
+
         if ($reflection->isAbstract() || $reflection->isInternal()) {
             return false;
         }
 
+        return true;
+    }
+
+    private function matchesIncludedNamespace(string $class): bool
+    {
         $namespaces = array_filter((array) config('connect-filament.discovery.included_model_namespaces', []));
         if ($namespaces === []) {
             return true;
