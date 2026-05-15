@@ -18,21 +18,16 @@ class ControlPlaneClient
 
     public function registerInstallation(Installation $installation, TokenSet $tokens): array
     {
-        $resources = $this->declaredResourceSchema();
-        $payload = [
-            'installation_public_id' => $installation->public_id,
-            'site_url' => $installation->site_url,
-            'api_base_url' => $this->apiBaseUrl($installation),
-            'embed_base_url' => $this->embedBaseUrl($installation),
-            'resources' => $resources,
-        ];
-        SensitiveData::assertPublicPayload($payload);
+        $body = $this->post($installation, $this->path('register_path'), $this->installationPayload($installation), $tokens->accessToken);
+        $this->applyRegistrationResponse($installation, $body);
 
-        if ($resources === []) {
-            $payload['resources'] = (object) [];
-        }
+        return $body;
+    }
 
-        $body = $this->post($installation, $this->path('register_path'), $payload, $tokens->accessToken);
+    public function syncCapabilities(Installation $installation): array
+    {
+        $tokens = $this->oauth->refreshAccessToken($installation);
+        $body = $this->post($installation, $this->path('register_path'), $this->installationPayload($installation), $tokens->accessToken);
         $this->applyRegistrationResponse($installation, $body);
 
         return $body;
@@ -92,6 +87,21 @@ class ControlPlaneClient
         return $body;
     }
 
+    private function installationPayload(Installation $installation): array
+    {
+        $resources = $this->registry->controlPlaneResourcesFor($installation);
+        $payload = [
+            'installation_public_id' => $installation->public_id,
+            'site_url' => $installation->site_url,
+            'api_base_url' => $this->apiBaseUrl($installation),
+            'embed_base_url' => $this->embedBaseUrl($installation),
+            'resources' => $resources === [] ? (object) [] : $resources,
+        ];
+        SensitiveData::assertPublicPayload($payload);
+
+        return $payload;
+    }
+
     private function applyRegistrationResponse(Installation $installation, array $body): void
     {
         $serverKey = (string) ($body['server_signing_key'] ?? '');
@@ -149,31 +159,6 @@ class ControlPlaneClient
         }
 
         return in_array(parse_url($url, PHP_URL_SCHEME), ['http', 'https'], true) ? $url : null;
-    }
-
-    private function declaredResourceSchema(): array
-    {
-        $schema = [];
-        foreach ($this->registry->all() as $slug => $resource) {
-            $schema[$slug] = [
-                'label' => $resource['label'] ?? $slug,
-                'identifier' => $resource['identifier'] ?? 'id',
-                'fields' => $resource['fields'] ?? [],
-                'searchable' => array_values($resource['searchable'] ?? []),
-                'filterable' => array_values($resource['filterable'] ?? []),
-                'actions' => array_map(
-                    fn (array $action): array => [
-                        'label' => $action['label'] ?? '',
-                        'description' => $action['description'] ?? '',
-                    ],
-                    $resource['actions'] ?? [],
-                ),
-            ];
-        }
-
-        SensitiveData::assertPublicPayload($schema);
-
-        return $schema;
     }
 
     private function path(string $key): string

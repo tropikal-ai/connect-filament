@@ -9,7 +9,9 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 use TropikalAI\ConnectFilament\Filament\Resources\InstallationResource;
 use TropikalAI\ConnectFilament\Models\Installation;
+use TropikalAI\ConnectFilament\Services\CapabilityGrantManager;
 use TropikalAI\ConnectFilament\Services\ControlPlaneClient;
+use TropikalAI\ConnectFilament\Services\ResourceRegistry;
 
 class Dashboard extends Page
 {
@@ -19,9 +21,14 @@ class Dashboard extends Page
 
     public ?Installation $installation = null;
 
+    public array $capabilityGrants = [];
+
     public function mount(): void
     {
         $this->installation = Installation::query()->first();
+        $this->capabilityGrants = $this->installation
+            ? app(CapabilityGrantManager::class)->grants($this->installation)
+            : [];
     }
 
     public function sync(): void
@@ -54,9 +61,39 @@ class Dashboard extends Page
             ->send();
     }
 
+    public function setCapabilityGrant(string $slug, string $grant, mixed $enabled): void
+    {
+        if (! $this->installation) {
+            return;
+        }
+
+        $this->installation = app(CapabilityGrantManager::class)->set(
+            $this->installation,
+            $slug,
+            $grant,
+            filter_var($enabled, FILTER_VALIDATE_BOOL),
+        );
+
+        if ($this->installation->isConnected()) {
+            app(ControlPlaneClient::class)->syncCapabilities($this->installation);
+        }
+
+        $this->mount();
+
+        Notification::make()
+            ->title('Capabilities updated')
+            ->success()
+            ->send();
+    }
+
     public function status(): array
     {
         return $this->installation?->safeStatus() ?? ['status' => Installation::STATUS_NOT_CONNECTED];
+    }
+
+    public function discoveredResources(): array
+    {
+        return app(ResourceRegistry::class)->all();
     }
 
     protected function getHeaderActions(): array

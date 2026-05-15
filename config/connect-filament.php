@@ -63,5 +63,30 @@ return [
         'asset_rewrite_prefixes' => [],
     ],
 
+    'discovery' => [
+        'enabled' => (bool) env('CONNECT_FILAMENT_DISCOVERY_ENABLED', true),
+        'model_classes' => [],
+        'included_model_namespaces' => [
+            'App\\Models\\',
+        ],
+        'excluded_model_classes' => [],
+        'excluded_field_patterns' => [
+            '/password/i',
+            '/token/i',
+            '/secret/i',
+            '/credential/i',
+            '/auth/i',
+            '/hash/i',
+            '/session/i',
+            '/remember_token/i',
+            '/api_key/i',
+            '/access_token/i',
+            '/refresh_token/i',
+            '/private_key/i',
+            '/public_key/i',
+        ],
+        'max_records_per_list_response' => (int) env('CONNECT_FILAMENT_MAX_RECORDS_PER_LIST', 100),
+    ],
+
     'resources' => [],
 ];

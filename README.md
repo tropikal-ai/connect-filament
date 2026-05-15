@@ -2,7 +2,7 @@
 
 Laravel + Filament integration for TROPIKAL Connect.
 
-This package provides the Filament plugin, OAuth setup controller, signed resource API, encrypted installation model, audit logging, and optional public embed status endpoint. Protocol primitives live in `tropikal-ai/connect`.
+This package provides the Filament plugin, OAuth setup controller, Eloquent business-object discovery, explicit read/write grants, signed resource API, encrypted installation model, audit logging, and optional public embed status endpoint. Protocol primitives live in `tropikal-ai/connect`.
 
 ## Requirements
 
@@ -64,34 +64,28 @@ CONNECT_FILAMENT_CONTROL_PLANE_URL=https://control.example.com
 
 Open the Filament navigation item labeled `TROPIKAL Connect` and click `Connect`. OAuth PKCE is the only supported setup path. Administrators never paste raw credentials into the UI.
 
-## Resource Declaration
+## Business Object Discovery
 
-Resources are opt-in. The default declaration is empty, which exposes nothing.
+Discovery is on by default, but access is opt-in. The package discovers safe Eloquent business-object candidates, excludes auth/internal/security models, removes secret-shaped fields, and shows two grants in Filament:
+
+- Read
+- Write
+
+The default grant state is empty, which exposes nothing. Write grants create `create` and `update` capabilities only. Delete is not exposed.
+
+Optional discovery configuration:
 
 ```php
-'resources' => [
-    'posts' => [
-        'label' => 'Posts',
-        'model' => App\Models\Post::class,
-        'identifier' => 'id',
-        'fields' => [
-            'title' => ['type' => 'string', 'required' => true],
-            'body' => ['type' => 'text'],
-            'published_at' => ['type' => 'datetime', 'required' => false],
-        ],
-        'searchable' => ['title'],
-        'filterable' => ['published_at'],
-        'actions' => [
-            'publish' => [
-                'label' => 'Publish',
-                'method' => 'publish',
-            ],
-        ],
+'discovery' => [
+    'enabled' => true,
+    'included_model_namespaces' => [
+        'App\\Models\\',
     ],
+    'excluded_model_classes' => [],
 ],
 ```
 
-The private control plane must grant each resource, permission, and named action before it is available through the signed API.
+After OAuth, open `TROPIKAL Connect` in Filament and check `Read` and/or `Write` for each discovered business object. Granted capabilities sync to the private control plane and can be used as website owner chat tools or Ops workflow Functions through the same capability contract.
 
 ## Security Model
 
@@ -100,6 +94,8 @@ The private control plane must grant each resource, permission, and named action
 - Signatures cover method, path, normalized query string, timestamp, nonce, installation id, and body hash.
 - Resource reads project declared fields only.
 - Resource writes reject unknown fields.
+- Eloquent discovery excludes secret-shaped fields before grants can be enabled.
+- Write grants do not expose delete.
 - Public browser payloads are checked recursively for secret-shaped keys.
 - No secrets are returned to browsers.
 

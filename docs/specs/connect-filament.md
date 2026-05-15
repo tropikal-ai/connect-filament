@@ -12,7 +12,7 @@ Laravel Filament projects need a one-click way to connect a site to the private 
 - Use OAuth authorization code with PKCE as the only setup path.
 - Store refresh credentials, PKCE verifiers, and server signing credentials with encrypted casts.
 - Verify server-to-server requests with the shared `tropikal-ai/connect` primitives.
-- Expose no resources until both local declarations and remote grants exist.
+- Discover Eloquent business-object candidates, but expose no resources until an admin grants read and/or write access.
 - Keep public status and embed payloads free of secret-shaped keys.
 
 ## Non-Goals
@@ -29,11 +29,14 @@ Laravel Filament projects need a one-click way to connect a site to the private 
 3. The package registers or reuses an OAuth public client, generates state and PKCE, then redirects to authorization.
 4. The callback validates state, PKCE, expiry, host, and exact redirect URI.
 5. The package exchanges the authorization code, stores the refresh credential encrypted, registers the installation with a safe payload, and stores server signing credentials encrypted.
-6. Resource schema and embed state are synchronized from private server responses.
+6. The administrator grants read/write access per discovered business object.
+7. Capability schema and embed state are synchronized from private server responses.
 
 ## Resource Boundary
 
-Local code declares resource fields and named actions. The private control plane grants a subset of those declarations. Empty declarations and empty grants expose nothing. Reads project declared fields only. Writes reject undeclared fields.
+Discovery finds Eloquent candidates and removes auth/internal/security models plus secret-shaped fields. Empty grants expose nothing. Read grants create list/get capabilities. Write grants create create/update capabilities. Delete is not exposed. Reads project declared fields only. Writes reject undeclared fields and set attributes explicitly instead of passing arbitrary payloads to mass assignment.
+
+The Filament page shows exactly two primary grant controls per business object: Read and Write. Granted capabilities are source-neutral and can be used by website owner chat or Ops workflow Functions.
 
 ## Security Model
 

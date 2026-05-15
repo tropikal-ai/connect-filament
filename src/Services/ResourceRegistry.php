@@ -6,31 +6,36 @@ namespace TropikalAI\ConnectFilament\Services;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\Rule;
+use TropikalAI\Connect\Domain\Capabilities\CapabilityDescriptor;
+use TropikalAI\Connect\Domain\Capabilities\CapabilitySet;
+use TropikalAI\Connect\Domain\Capabilities\FieldDescriptor;
+use TropikalAI\Connect\Domain\Capabilities\OperationDescriptor;
 use TropikalAI\Connect\Domain\Resources\ResourceSchema;
 use TropikalAI\ConnectFilament\Models\Installation;
 
 class ResourceRegistry
 {
-    private ResourceSchema $schema;
-
-    public function __construct(private readonly array $resources = [])
-    {
-        $this->schema = new ResourceSchema($resources);
-    }
+    public function __construct(
+        private readonly array $resources = [],
+        private readonly ?EloquentDiscovery $discovery = null,
+    ) {}
 
     public function resource(string $slug): ?array
     {
-        return $this->resources[$slug] ?? null;
+        return $this->all()[$slug] ?? null;
     }
 
     public function all(): array
     {
-        return $this->resources;
+        return [
+            ...($this->discovery?->discover() ?? []),
+            ...$this->resources,
+        ];
     }
 
     public function schemaFor(Installation $installation): array
     {
-        return $this->schema->publicSchema(
+        return $this->schema()->publicSchema(
             $installation->allowed_resources ?? [],
             $installation->resource_permissions ?? [],
         );
@@ -47,7 +52,7 @@ class ResourceRegistry
 
     public function allows(Installation $installation, string $slug, string $permission): bool
     {
-        return $this->schema->allows($installation->resource_permissions ?? [], $slug, $permission);
+        return $this->schema()->allows($installation->resource_permissions ?? [], $slug, $permission);
     }
 
     public function identifierFor(array $resource): string
@@ -115,7 +120,25 @@ class ResourceRegistry
 
     public function unknownWriteFields(string $slug, array $payload): array
     {
-        return $this->schema->unknownWriteFields($slug, $payload);
+        return $this->schema()->unknownWriteFields($slug, $payload);
+    }
+
+    public function controlPlaneResourcesFor(Installation $installation): array
+    {
+        $schema = $this->schemaFor($installation);
+        foreach ($schema as $slug => $resource) {
+            $definition = $this->resource((string) $slug) ?? [];
+            $permissions = is_array($resource['permissions'] ?? null) ? $resource['permissions'] : [];
+            $schema[$slug] = [
+                ...$resource,
+                'source_kind' => 'connect_filament',
+                'model_class' => $definition['model'] ?? null,
+                'permissions' => $permissions,
+                'capabilities' => $this->operationPayload((string) $slug, $definition, $permissions),
+            ];
+        }
+
+        return $schema;
     }
 
     private function readableFields(array $resource): array
@@ -124,5 +147,83 @@ class ResourceRegistry
             $this->identifierFor($resource),
             ...array_keys($resource['fields'] ?? []),
         ]));
+    }
+
+    private function schema(): ResourceSchema
+    {
+        return new ResourceSchema($this->all());
+    }
+
+    private function operationPayload(string $slug, array $resource, array $permissions): array
+    {
+        $fields = [];
+        foreach ($resource['fields'] ?? [] as $field => $definition) {
+            if (! is_string($field) || ! is_array($definition)) {
+                continue;
+            }
+            $fields[$field] = new FieldDescriptor(
+                name: $field,
+                type: (string) ($definition['type'] ?? 'string'),
+                readable: true,
+                writable: ($definition['writable'] ?? true) !== false,
+                required: (bool) ($definition['required'] ?? false),
+            );
+        }
+
+        $operations = [];
+        if (in_array('read', $permissions, true)) {
+            $operations[] = new OperationDescriptor(
+                name: "{$slug}.list",
+                operation: 'list',
+                riskLevel: 'read',
+                inputSchema: ['type' => 'object'],
+                outputSchema: ['type' => 'object'],
+            );
+            $operations[] = new OperationDescriptor(
+                name: "{$slug}.get",
+                operation: 'get',
+                riskLevel: 'read',
+                inputSchema: [
+                    'type' => 'object',
+                    'required' => ['id'],
+                    'properties' => ['id' => ['type' => 'string']],
+                ],
+                outputSchema: ['type' => 'object'],
+            );
+        }
+        if (in_array('create', $permissions, true) && in_array('update', $permissions, true)) {
+            $operations[] = new OperationDescriptor(
+                name: "{$slug}.create",
+                operation: 'create',
+                riskLevel: 'write',
+                inputSchema: ['type' => 'object'],
+                outputSchema: ['type' => 'object'],
+                requiresConfirmation: true,
+            );
+            $operations[] = new OperationDescriptor(
+                name: "{$slug}.update",
+                operation: 'update',
+                riskLevel: 'write',
+                inputSchema: [
+                    'type' => 'object',
+                    'required' => ['id'],
+                    'properties' => ['id' => ['type' => 'string']],
+                ],
+                outputSchema: ['type' => 'object'],
+                requiresConfirmation: true,
+            );
+        }
+
+        $capability = new CapabilityDescriptor(
+            sourceKind: 'connect_filament',
+            resourceKey: $slug,
+            resourceLabel: (string) ($resource['label'] ?? $slug),
+            identifier: $this->identifierFor($resource),
+            fields: $fields,
+            operations: $operations,
+            grants: $permissions,
+        );
+
+        return (new CapabilitySet([$capability]))->publicPayload()[0]['operations'];
     }
 }

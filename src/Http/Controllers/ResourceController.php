@@ -50,7 +50,8 @@ class ResourceController extends Controller
             }
         }
 
-        $paginated = $query->paginate(min(max((int) $request->query('per_page', 20), 1), 100));
+        $maxPerPage = max(1, (int) config('connect-filament.discovery.max_records_per_list_response', 100));
+        $paginated = $query->paginate(min(max((int) $request->query('per_page', 20), 1), $maxPerPage));
 
         return response()->json([
             'data' => collect($paginated->items())
@@ -85,7 +86,11 @@ class ResourceController extends Controller
 
         $validated = $request->validate($this->registry->validationRules($resource, true));
         $modelClass = $resource['model'];
-        $record = $modelClass::create($validated);
+        $record = new $modelClass;
+        foreach ($validated as $field => $value) {
+            $record->setAttribute($field, $value);
+        }
+        $record->save();
         $this->audit->record($request, $installation, $slug, $record->getKey(), 'create', ['created' => $validated]);
 
         return response()->json(['data' => $this->registry->project($record->fresh() ?? $record, $resource)], 201);
@@ -104,26 +109,13 @@ class ResourceController extends Controller
 
         $validated = $request->validate($this->registry->validationRules($resource, false));
         $before = collect($record->getAttributes())->only(array_keys($validated))->toArray();
-        $record->update($validated);
+        foreach ($validated as $field => $value) {
+            $record->setAttribute($field, $value);
+        }
+        $record->save();
         $this->audit->record($request, $installation, $slug, $record->getKey(), 'update', ['before' => $before, 'after' => $validated]);
 
         return response()->json(['data' => $this->registry->project($record->fresh() ?? $record, $resource)]);
-    }
-
-    public function destroy(Request $request): JsonResponse
-    {
-        [$installation, $slug, $resource] = $this->resourceContext($request, 'delete');
-        $record = $this->findRecord($resource, (string) $request->route('id'));
-        if (! $record) {
-            return response()->json(['error' => 'Record not found'], 404);
-        }
-
-        $recordId = $record->getKey();
-        $deleted = $this->registry->project($record, $resource);
-        $record->delete();
-        $this->audit->record($request, $installation, $slug, $recordId, 'delete', ['deleted' => $deleted]);
-
-        return response()->json(['deleted' => true]);
     }
 
     public function action(Request $request): JsonResponse

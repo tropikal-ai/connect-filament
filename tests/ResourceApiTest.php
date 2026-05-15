@@ -107,6 +107,26 @@ final class ResourceApiTest extends TestCase
         $this->assertSame(1, AuditLog::query()->where('action', 'create')->count());
     }
 
+    public function test_write_grant_does_not_expose_delete(): void
+    {
+        $this->configurePostResource();
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['posts'],
+            'resource_permissions' => ['posts' => ['create', 'update']],
+        ]);
+        $post = Post::query()->create([
+            'title' => 'Draft',
+            'body' => 'Body',
+        ]);
+        $path = "/api/tropikal-connect/installations/{$installation->public_id}/resources/posts/{$post->id}";
+
+        $this->withHeaders($this->sign($installation, 'DELETE', $path, null, '', 'delete_denied'))
+            ->deleteJson($path)
+            ->assertStatus(405);
+
+        $this->assertTrue(Post::query()->whereKey($post->id)->exists());
+    }
+
     public function test_named_actions_require_explicit_grants(): void
     {
         $this->configurePostResource();

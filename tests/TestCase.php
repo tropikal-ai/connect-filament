@@ -13,6 +13,7 @@ use Orchestra\Testbench\TestCase as BaseTestCase;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
 use TropikalAI\ConnectFilament\ConnectFilamentServiceProvider;
 use TropikalAI\ConnectFilament\Models\Installation;
+use TropikalAI\ConnectFilament\Services\EloquentDiscovery;
 use TropikalAI\ConnectFilament\Services\ResourceRegistry;
 use TropikalAI\ConnectFilament\Tests\Fixtures\Post;
 use TropikalAI\ConnectFilament\Tests\Fixtures\User;
@@ -56,6 +57,13 @@ abstract class TestCase extends BaseTestCase
         $app['config']->set('connect-filament.control_plane.base_url', 'https://control.example.com');
         $app['config']->set('connect-filament.setup.connect_middleware', ['auth']);
         $app['config']->set('connect-filament.setup.after_connect_url', '/admin/tropikal-connect');
+        $app['config']->set('connect-filament.discovery.included_model_namespaces', [
+            'TropikalAI\\ConnectFilament\\Tests\\Fixtures\\',
+        ]);
+        $app['config']->set('connect-filament.discovery.model_classes', [
+            Post::class,
+            User::class,
+        ]);
     }
 
     protected function defineRoutes($router): void
@@ -99,6 +107,7 @@ abstract class TestCase extends BaseTestCase
         $this->app->forgetInstance(ResourceRegistry::class);
         $this->app->singleton(ResourceRegistry::class, fn (): ResourceRegistry => new ResourceRegistry(
             config('connect-filament.resources', []),
+            $this->app->make(EloquentDiscovery::class),
         ));
     }
 

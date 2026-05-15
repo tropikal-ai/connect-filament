@@ -20,8 +20,6 @@ Route::prefix('/installations/{installationId}')
             ->name('connect-filament.api.resources.show');
         Route::match(['put', 'patch'], '/resources/{resource}/{id}', [ResourceController::class, 'update'])
             ->name('connect-filament.api.resources.update');
-        Route::delete('/resources/{resource}/{id}', [ResourceController::class, 'destroy'])
-            ->name('connect-filament.api.resources.destroy');
         Route::post('/resources/{resource}/{id}/actions/{action}', [ResourceController::class, 'action'])
             ->name('connect-filament.api.resources.action');
     });
