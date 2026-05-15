@@ -97,6 +97,7 @@ class ResourceRegistry
                 'email' => $fieldRules[] = 'email',
                 'url' => $fieldRules[] = 'url',
                 'integer' => $fieldRules[] = 'integer',
+                'boolean' => $fieldRules[] = 'boolean',
                 'json' => $fieldRules[] = 'array',
                 'datetime' => $fieldRules[] = 'date',
                 default => $fieldRules[] = 'string',
@@ -196,18 +197,22 @@ class ResourceRegistry
                 name: "{$slug}.create",
                 operation: 'create',
                 riskLevel: 'write',
-                inputSchema: ['type' => 'object'],
+                inputSchema: $this->writeInputSchema($resource, true),
                 outputSchema: ['type' => 'object'],
                 requiresConfirmation: true,
             );
+            $updateInputSchema = $this->writeInputSchema($resource, false);
             $operations[] = new OperationDescriptor(
                 name: "{$slug}.update",
                 operation: 'update',
                 riskLevel: 'write',
                 inputSchema: [
-                    'type' => 'object',
+                    ...$updateInputSchema,
                     'required' => ['id'],
-                    'properties' => ['id' => ['type' => 'string']],
+                    'properties' => [
+                        'id' => ['type' => 'string'],
+                        ...$updateInputSchema['properties'],
+                    ],
                 ],
                 outputSchema: ['type' => 'object'],
                 requiresConfirmation: true,
@@ -225,5 +230,58 @@ class ResourceRegistry
         );
 
         return (new CapabilitySet([$capability]))->publicPayload()[0]['operations'];
+    }
+
+    private function writeInputSchema(array $resource, bool $creating): array
+    {
+        $properties = [];
+        $required = [];
+
+        foreach ($resource['fields'] ?? [] as $field => $definition) {
+            if (! is_string($field) || ! is_array($definition) || ($definition['writable'] ?? true) === false) {
+                continue;
+            }
+
+            $properties[$field] = $this->jsonSchemaForField($definition);
+            if ($creating && ! empty($definition['required'])) {
+                $required[] = $field;
+            }
+        }
+
+        $schema = [
+            'type' => 'object',
+            'additionalProperties' => false,
+            'properties' => $properties,
+        ];
+        if ($required !== []) {
+            $schema['required'] = $required;
+        }
+
+        return $schema;
+    }
+
+    private function jsonSchemaForField(array $definition): array
+    {
+        $schema = match ($definition['type'] ?? 'string') {
+            'integer' => ['type' => 'integer'],
+            'boolean' => ['type' => 'boolean'],
+            'json' => ['type' => 'object'],
+            'datetime' => ['type' => 'string', 'format' => 'date-time'],
+            'email' => ['type' => 'string', 'format' => 'email'],
+            'url' => ['type' => 'string', 'format' => 'uri'],
+            default => ['type' => 'string'],
+        };
+
+        if (($definition['type'] ?? null) === 'enum') {
+            $schema = ['type' => 'string', 'enum' => array_values((array) ($definition['options'] ?? []))];
+        }
+        if (isset($definition['max']) && $schema['type'] === 'string') {
+            $schema['maxLength'] = (int) $definition['max'];
+        }
+        if (isset($definition['min']) && $schema['type'] === 'string') {
+            $schema['minLength'] = (int) $definition['min'];
+        }
+
+        return $schema;
     }
 }

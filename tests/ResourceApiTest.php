@@ -11,6 +11,8 @@ use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
 use TropikalAI\ConnectFilament\Models\AuditLog;
 use TropikalAI\ConnectFilament\Models\Installation;
+use TropikalAI\ConnectFilament\Services\ResourceRegistry;
+use TropikalAI\ConnectFilament\Tests\Fixtures\Article;
 use TropikalAI\ConnectFilament\Tests\Fixtures\Post;
 
 final class ResourceApiTest extends TestCase
@@ -106,6 +108,37 @@ final class ResourceApiTest extends TestCase
         ], 'create_valid')->assertCreated();
 
         $this->assertSame(1, AuditLog::query()->where('action', 'create')->count());
+    }
+
+    public function test_discovered_create_schema_requires_non_nullable_safe_fields_and_not_generated_slug(): void
+    {
+        config()->set('connect-filament.resources', []);
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['articles'],
+            'resource_permissions' => ['articles' => ['create', 'update']],
+        ]);
+        $createPath = "/api/tropikal-connect/installations/{$installation->public_id}/resources/articles";
+
+        $operation = collect($this->app->make(ResourceRegistry::class)
+            ->controlPlaneResourcesFor($installation)['articles']['capabilities'])
+            ->firstWhere('operation', 'create');
+
+        $this->assertSame(['title', 'content'], $operation['input_schema']['required']);
+        $this->assertArrayHasKey('title', $operation['input_schema']['properties']);
+        $this->assertArrayHasKey('content', $operation['input_schema']['properties']);
+        $this->assertArrayNotHasKey('slug', array_flip($operation['input_schema']['required']));
+
+        $this->signedJson($installation, 'POST', $createPath, [], 'article_empty')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['title', 'content']);
+
+        $created = $this->signedJson($installation, 'POST', $createPath, [
+            'title' => 'Discovered Article',
+            'content' => 'Readable body',
+        ], 'article_valid')->assertCreated()->json('data');
+
+        $this->assertSame('Discovered Article', $created['title']);
+        $this->assertSame('discovered-article', Article::query()->firstOrFail()->slug);
     }
 
     public function test_write_grant_does_not_expose_delete(): void

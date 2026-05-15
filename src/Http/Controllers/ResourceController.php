@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace TropikalAI\ConnectFilament\Http\Controllers;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Throwable;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\AuditLogger;
 use TropikalAI\ConnectFilament\Services\ResourceRegistry;
@@ -86,12 +88,22 @@ class ResourceController extends Controller
 
         $validated = $request->validate($this->registry->validationRules($resource, true));
         $modelClass = $resource['model'];
-        $record = new $modelClass;
-        foreach ($validated as $field => $value) {
-            $record->setAttribute($field, $value);
+        try {
+            $record = new $modelClass;
+            foreach ($validated as $field => $value) {
+                $record->setAttribute($field, $value);
+            }
+            $record->save();
+            $this->audit->record($request, $installation, $slug, $record->getKey(), 'create', ['created' => $validated]);
+        } catch (QueryException $exception) {
+            report($exception);
+
+            return $this->resourceWriteError($request, 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->resourceWriteError($request, 500);
         }
-        $record->save();
-        $this->audit->record($request, $installation, $slug, $record->getKey(), 'create', ['created' => $validated]);
 
         return response()->json(['data' => $this->registry->project($record->fresh() ?? $record, $resource)], 201);
     }
@@ -109,11 +121,21 @@ class ResourceController extends Controller
 
         $validated = $request->validate($this->registry->validationRules($resource, false));
         $before = collect($record->getAttributes())->only(array_keys($validated))->toArray();
-        foreach ($validated as $field => $value) {
-            $record->setAttribute($field, $value);
+        try {
+            foreach ($validated as $field => $value) {
+                $record->setAttribute($field, $value);
+            }
+            $record->save();
+            $this->audit->record($request, $installation, $slug, $record->getKey(), 'update', ['before' => $before, 'after' => $validated]);
+        } catch (QueryException $exception) {
+            report($exception);
+
+            return $this->resourceWriteError($request, 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->resourceWriteError($request, 500);
         }
-        $record->save();
-        $this->audit->record($request, $installation, $slug, $record->getKey(), 'update', ['before' => $before, 'after' => $validated]);
 
         return response()->json(['data' => $this->registry->project($record->fresh() ?? $record, $resource)]);
     }
@@ -188,5 +210,20 @@ class ResourceController extends Controller
         $column = $resource['sort_column'] ?? 'created_at';
 
         return is_string($column) && $column !== '' ? $column : $this->registry->identifierFor($resource);
+    }
+
+    private function resourceWriteError(Request $request, int $status): JsonResponse
+    {
+        $correlationId = (string) ($request->headers->get('X-Tropikal-Correlation-Id')
+            ?: $request->headers->get('X-Request-Id')
+            ?: '');
+
+        return response()->json(array_filter([
+            'error' => $status === 422 ? 'Invalid resource data' : 'Resource mutation failed',
+            'message' => $status === 422
+                ? 'The resource could not be saved with the provided fields.'
+                : 'The resource could not be saved. Check application logs.',
+            'correlation_id' => $correlationId !== '' ? $correlationId : null,
+        ]), $status);
     }
 }

@@ -85,6 +85,9 @@ return [
             '/private_key/i',
             '/public_key/i',
         ],
+        'auto_generated_field_names' => [
+            'slug',
+        ],
         'max_records_per_list_response' => (int) env('CONNECT_FILAMENT_MAX_RECORDS_PER_LIST', 100),
     ],
 

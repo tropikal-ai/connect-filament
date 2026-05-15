@@ -48,6 +48,7 @@ class EloquentDiscovery
         }
 
         $identifier = $model->getKeyName() ?: 'id';
+        $columns = $this->columnsByName($table);
         $fields = [];
         foreach (Schema::getColumnListing($table) as $column) {
             if ($column === $identifier || $this->isUnsafeField($model, $column)) {
@@ -56,7 +57,7 @@ class EloquentDiscovery
 
             $fields[$column] = [
                 'type' => $this->fieldType($table, $column),
-                'required' => false,
+                'required' => $this->isRequiredField($model, $column, $columns[$column] ?? []),
                 'writable' => $this->isWritableField($model, $column),
             ];
         }
@@ -203,6 +204,46 @@ class EloquentDiscovery
             'text' => 'text',
             default => 'string',
         };
+    }
+
+    private function columnsByName(string $table): array
+    {
+        try {
+            $columns = Schema::getColumns($table);
+        } catch (Throwable) {
+            return [];
+        }
+
+        $byName = [];
+        foreach ($columns as $column) {
+            if (! is_array($column)) {
+                continue;
+            }
+            $name = $column['name'] ?? null;
+            if (is_string($name) && $name !== '') {
+                $byName[$name] = $column;
+            }
+        }
+
+        return $byName;
+    }
+
+    private function isRequiredField(Model $model, string $field, array $column): bool
+    {
+        if (! $this->isWritableField($model, $field)) {
+            return false;
+        }
+        if (in_array($field, (array) config('connect-filament.discovery.auto_generated_field_names', []), true)) {
+            return false;
+        }
+        if (($column['nullable'] ?? true) === true) {
+            return false;
+        }
+        if (array_key_exists('default', $column) && $column['default'] !== null) {
+            return false;
+        }
+
+        return true;
     }
 
     private function searchableFields(array $fields): array

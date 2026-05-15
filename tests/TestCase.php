@@ -15,6 +15,7 @@ use TropikalAI\ConnectFilament\ConnectFilamentServiceProvider;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\EloquentDiscovery;
 use TropikalAI\ConnectFilament\Services\ResourceRegistry;
+use TropikalAI\ConnectFilament\Tests\Fixtures\Article;
 use TropikalAI\ConnectFilament\Tests\Fixtures\Post;
 use TropikalAI\ConnectFilament\Tests\Fixtures\User;
 
@@ -61,6 +62,7 @@ abstract class TestCase extends BaseTestCase
             'TropikalAI\\ConnectFilament\\Tests\\Fixtures\\',
         ]);
         $app['config']->set('connect-filament.discovery.model_classes', [
+            Article::class,
             Post::class,
             User::class,
         ]);
@@ -175,6 +177,17 @@ abstract class TestCase extends BaseTestCase
                 $table->text('body')->nullable();
                 $table->string('secret_note')->nullable();
                 $table->timestamp('published_at')->nullable();
+                $table->timestamps();
+            });
+        }
+
+        if (! Schema::hasTable('test_articles')) {
+            Schema::create('test_articles', function (Blueprint $table): void {
+                $table->id();
+                $table->string('title');
+                $table->string('slug')->unique();
+                $table->text('content');
+                $table->string('category')->default('Research');
                 $table->timestamps();
             });
         }
