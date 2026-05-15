@@ -18,14 +18,19 @@ class ControlPlaneClient
 
     public function registerInstallation(Installation $installation, TokenSet $tokens): array
     {
+        $resources = $this->declaredResourceSchema();
         $payload = [
             'installation_public_id' => $installation->public_id,
             'site_url' => $installation->site_url,
             'api_base_url' => $this->apiBaseUrl($installation),
             'embed_base_url' => $this->embedBaseUrl($installation),
-            'resources' => $this->declaredResourceSchema(),
+            'resources' => $resources,
         ];
         SensitiveData::assertPublicPayload($payload);
+
+        if ($resources === []) {
+            $payload['resources'] = (object) [];
+        }
 
         $body = $this->post($installation, $this->path('register_path'), $payload, $tokens->accessToken);
         $this->applyRegistrationResponse($installation, $body);
@@ -76,7 +81,7 @@ class ControlPlaneClient
             ->post(rtrim((string) $installation->control_plane_url, '/').$path, $payload);
 
         if (! $response->successful()) {
-            throw new \RuntimeException('The control plane rejected the connect request.');
+            throw new \RuntimeException(sprintf('The control plane rejected the connect request with HTTP %d.', $response->status()));
         }
 
         $body = $response->json();

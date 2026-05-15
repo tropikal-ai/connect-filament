@@ -144,6 +144,7 @@ final class OAuthSetupTest extends TestCase
                 && $payload['site_url'] === 'https://example.com'
                 && $payload['api_base_url'] === 'https://api.example.com/api/tropikal-connect'
                 && $payload['embed_base_url'] === 'https://example.com/tropikal-connect'
+                && $payload['resources'] instanceof \stdClass
                 && ! isset($payload['access_token'], $payload['refresh_token'], $payload['server_signing_key']);
         });
     }
