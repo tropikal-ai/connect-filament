@@ -41,6 +41,12 @@ All API requests from the private control plane must include a signed assertion 
 
 The package never trusts browser-submitted account metadata and does not decode identity claims as authority. Account and workspace metadata come from the private control plane after token exchange.
 
+Browser-facing embed chat endpoints are public, tokenless same-origin bridge
+endpoints. They must run through Laravel's `api` middleware, not the `web`
+session stack, because visitor chat is authenticated by the bridge's
+server-to-server signed request to the control plane rather than by a Laravel
+session or CSRF token.
+
 ## Test Plan
 
-Orchestra Testbench covers package boot, Filament registration, OAuth setup, encrypted persistence, resource access rules, audit logging, public payload safety, signed request rejection cases, and SQLite in-memory execution.
+Orchestra Testbench covers package boot, Filament registration, OAuth setup, encrypted persistence, resource access rules, audit logging, public payload safety, sessionless public embed chat proxying, signed request rejection cases, and SQLite in-memory execution.

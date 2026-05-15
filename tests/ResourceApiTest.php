@@ -6,6 +6,7 @@ namespace TropikalAI\ConnectFilament\Tests;
 
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Route;
 use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
 use TropikalAI\ConnectFilament\Models\AuditLog;
@@ -184,6 +185,48 @@ final class ResourceApiTest extends TestCase
                 'error' => 'chat_not_enabled',
                 'message' => 'Website chat is not enabled for this site.',
             ]);
+    }
+
+    public function test_public_chat_api_routes_use_api_middleware_not_web_sessions(): void
+    {
+        foreach (['connect-filament.embed.chat.info', 'connect-filament.embed.chat'] as $name) {
+            $route = Route::getRoutes()->getByName($name);
+            $this->assertNotNull($route);
+            $middleware = $route->gatherMiddleware();
+
+            $this->assertContains('api', $middleware);
+            $this->assertNotContains('web', $middleware);
+        }
+    }
+
+    public function test_public_chat_post_proxies_with_signed_connect_request(): void
+    {
+        $installation = $this->connectedInstallation([
+            'embed_status' => 'enabled',
+        ]);
+
+        Http::fake([
+            'https://control.example.com/api/connect-filament/embed/chat' => Http::response([
+                'message' => 'Hello from the workflow.',
+            ]),
+        ]);
+
+        $this->postJson('/tropikal-connect/api/chat', [
+            'message' => 'Hello',
+            'session_id' => 'embed_session_123',
+        ], [
+            'X-Embed-Origin' => 'https://cms.example.com',
+        ])->assertOk()
+            ->assertJsonPath('message', 'Hello from the workflow.');
+
+        Http::assertSent(function (Request $request) use ($installation): bool {
+            return $request->url() === 'https://control.example.com/api/connect-filament/embed/chat'
+                && $request->method() === 'POST'
+                && $request->hasHeader(SignedRequest::INSTALLATION_HEADER, (string) $installation->public_id)
+                && $request->hasHeader(SignedRequest::SIGNATURE_HEADER)
+                && $request->hasHeader('X-Embed-Origin', 'https://cms.example.com')
+                && ! $request->hasHeader('Authorization');
+        });
     }
 
     public function test_public_chat_info_proxies_with_signed_connect_request(): void

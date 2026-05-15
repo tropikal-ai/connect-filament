@@ -41,6 +41,7 @@ class ConnectFilamentServiceProvider extends ServiceProvider
     private function routes(): void
     {
         Route::middleware('web')->group(__DIR__.'/../routes/web.php');
+        Route::middleware('api')->group(__DIR__.'/../routes/embed-api.php');
         Route::prefix('api/'.trim((string) config('connect-filament.api.prefix', 'tropikal-connect'), '/'))
             ->middleware('api')
             ->group(__DIR__.'/../routes/api.php');

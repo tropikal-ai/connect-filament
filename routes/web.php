@@ -26,9 +26,5 @@ Route::prefix($prefix)
             Route::get('/embed/{asset}', [EmbedController::class, 'asset'])
                 ->where('asset', 'chat-widget\.js|iframe\.html|iframe\.js|iframe\.css|markdown\.js')
                 ->name('embed.asset');
-            Route::get('/api/chat/info', [EmbedController::class, 'chatInfo'])
-                ->name('embed.chat.info');
-            Route::post('/api/chat', [EmbedController::class, 'chat'])
-                ->name('embed.chat');
         }
     });
