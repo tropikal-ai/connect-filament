@@ -1,10 +1,10 @@
 # Connect Filament Spec
 
-Status: draft
+Status: release candidate
 
 ## Problem
 
-Laravel Filament projects need a one-click way to connect a site to the private Tropikal control plane without exposing server credentials to administrators or browsers.
+Laravel Filament projects need a one-click way to connect a site to a private control plane without exposing server credentials to administrators or browsers.
 
 ## Goals
 
@@ -36,19 +36,19 @@ Laravel Filament projects need a one-click way to connect a site to the private 
 
 Discovery finds Eloquent candidates and removes auth/internal/security models plus secret-shaped fields. Empty grants expose nothing. Read grants create list/get capabilities. Write grants create create/update capabilities. Delete is not exposed. Reads project declared fields only. Writes reject undeclared fields and set attributes explicitly instead of passing arbitrary payloads to mass assignment.
 
-The Filament page shows exactly two primary grant controls per business object: Read and Write. Granted capabilities are source-neutral and can be used by website owner chat or Ops workflow Functions.
+The Filament page shows exactly two primary grant controls per business object: Read and Write. Granted capabilities are source-neutral and can be used by website owner chat or automation runtimes.
 
 ## Security Model
 
 All API requests from the private control plane must include a signed assertion covering method, path, normalized query string, timestamp, nonce, installation id, and body hash. Nonces are claimed through the Laravel cache with an atomic add operation.
 
-The package never trusts browser-submitted account metadata and does not decode identity claims as authority. Account and workspace metadata come from the private control plane after token exchange.
+The package never trusts browser-submitted account metadata and does not decode identity claims as authority. Account metadata comes from the private control plane after token exchange.
 
-Browser-facing embed chat endpoints are public, tokenless same-origin bridge
+Browser-facing embed proxy endpoints are public, tokenless same-origin
 endpoints. They must run through Laravel's `api` middleware, not the `web`
-session stack, because visitor chat is authenticated by the bridge's
-server-to-server signed request to the control plane rather than by a Laravel
-session or CSRF token.
+session stack, because visitor chat is authenticated by a server-to-server
+signed request to the control plane rather than by a Laravel session or CSRF
+token.
 
 ## Test Plan
 
