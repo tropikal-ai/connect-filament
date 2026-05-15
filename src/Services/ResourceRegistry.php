@@ -1,0 +1,128 @@
+<?php
+
+declare(strict_types=1);
+
+namespace TropikalAI\ConnectFilament\Services;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\Rule;
+use TropikalAI\Connect\Domain\Resources\ResourceSchema;
+use TropikalAI\ConnectFilament\Models\Installation;
+
+class ResourceRegistry
+{
+    private ResourceSchema $schema;
+
+    public function __construct(private readonly array $resources = [])
+    {
+        $this->schema = new ResourceSchema($resources);
+    }
+
+    public function resource(string $slug): ?array
+    {
+        return $this->resources[$slug] ?? null;
+    }
+
+    public function all(): array
+    {
+        return $this->resources;
+    }
+
+    public function schemaFor(Installation $installation): array
+    {
+        return $this->schema->publicSchema(
+            $installation->allowed_resources ?? [],
+            $installation->resource_permissions ?? [],
+        );
+    }
+
+    public function allowedResource(Installation $installation, string $slug): ?array
+    {
+        if (! in_array($slug, $installation->allowed_resources ?? [], true)) {
+            return null;
+        }
+
+        return $this->resource($slug);
+    }
+
+    public function allows(Installation $installation, string $slug, string $permission): bool
+    {
+        return $this->schema->allows($installation->resource_permissions ?? [], $slug, $permission);
+    }
+
+    public function identifierFor(array $resource): string
+    {
+        $identifier = $resource['identifier'] ?? 'id';
+
+        return is_string($identifier) && $identifier !== '' ? $identifier : 'id';
+    }
+
+    public function writableFields(array $resource): array
+    {
+        return array_values(array_filter(
+            array_keys($resource['fields'] ?? []),
+            fn (string $field): bool => ($resource['fields'][$field]['writable'] ?? true) !== false,
+        ));
+    }
+
+    public function project(Model $record, array $resource): array
+    {
+        $payload = [];
+        foreach ($this->readableFields($resource) as $field) {
+            $payload[$field] = $record->getAttribute($field);
+        }
+
+        return $payload;
+    }
+
+    public function validationRules(array $resource, bool $creating): array
+    {
+        $rules = [];
+        foreach ($resource['fields'] ?? [] as $field => $definition) {
+            if (($definition['writable'] ?? true) === false) {
+                continue;
+            }
+
+            $fieldRules = [($creating && ! empty($definition['required'])) ? 'required' : 'sometimes'];
+            if (empty($definition['required'])) {
+                $fieldRules[] = 'nullable';
+            }
+
+            match ($definition['type'] ?? 'string') {
+                'email' => $fieldRules[] = 'email',
+                'url' => $fieldRules[] = 'url',
+                'integer' => $fieldRules[] = 'integer',
+                'json' => $fieldRules[] = 'array',
+                'datetime' => $fieldRules[] = 'date',
+                default => $fieldRules[] = 'string',
+            };
+
+            if (($definition['type'] ?? null) === 'enum') {
+                $fieldRules[] = Rule::in($definition['options'] ?? []);
+            }
+            if (isset($definition['max'])) {
+                $fieldRules[] = 'max:'.(int) $definition['max'];
+            }
+            if (isset($definition['min'])) {
+                $fieldRules[] = 'min:'.(int) $definition['min'];
+            }
+
+            $rules[$field] = $fieldRules;
+        }
+
+        return $rules;
+    }
+
+    public function unknownWriteFields(string $slug, array $payload): array
+    {
+        return $this->schema->unknownWriteFields($slug, $payload);
+    }
+
+    private function readableFields(array $resource): array
+    {
+        return array_values(array_unique([
+            $this->identifierFor($resource),
+            ...array_keys($resource['fields'] ?? []),
+        ]));
+    }
+}
