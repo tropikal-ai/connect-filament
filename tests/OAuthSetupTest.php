@@ -47,6 +47,35 @@ final class OAuthSetupTest extends TestCase
             && $request['redirect_uris'] === ['https://cms.example.com/tropikal-connect/oauth/callback']);
     }
 
+    public function test_oauth_setup_rejects_insecure_nonlocal_endpoints(): void
+    {
+        $this->withoutExceptionHandling();
+        config()->set('connect-filament.oauth.authorization_server_url', 'http://auth.example.com');
+
+        $this->expectException(\RuntimeException::class);
+        $this->actingAs($this->createUser())->get(route('connect-filament.oauth.connect'));
+    }
+
+    public function test_oauth_setup_allows_local_http_for_development(): void
+    {
+        config()->set('app.url', 'http://localhost:8000');
+        config()->set('connect-filament.site.url', 'http://localhost:8000');
+        config()->set('connect-filament.oauth.redirect_base_url', 'http://localhost:8000');
+        config()->set('connect-filament.oauth.authorization_server_url', 'http://localhost:9000');
+        config()->set('connect-filament.control_plane.base_url', 'http://localhost:9001');
+
+        Http::fake([
+            'http://localhost:9000/oauth/register' => Http::response(['client_id' => 'client_local']),
+        ]);
+
+        $this->actingAs($this->createUser())
+            ->get(route('connect-filament.oauth.connect'))
+            ->assertRedirect();
+
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'http://localhost:9000/oauth/register'
+            && $request['client_uri'] === 'http://localhost:8000');
+    }
+
     public function test_callback_rejects_missing_invalid_expired_state_and_wrong_redirect_uri(): void
     {
         $this->get('https://cms.example.com/tropikal-connect/oauth/callback')

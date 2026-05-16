@@ -89,16 +89,8 @@ class EloquentDiscovery
 
     private function modelClasses(): array
     {
-        $classes = [];
-        foreach ((array) config('connect-filament.resources', []) as $resource) {
-            if (is_array($resource) && is_string($resource['model'] ?? null)) {
-                $classes[] = $resource['model'];
-            }
-        }
-
         $classes = [
-            ...$classes,
-            ...(array) config('connect-filament.discovery.model_classes', []),
+            ...$this->explicitModelClasses(),
             ...get_declared_classes(),
             ...$this->classMapClasses(),
         ];
@@ -124,7 +116,7 @@ class EloquentDiscovery
             return false;
         }
 
-        if (! $this->matchesIncludedNamespace($class)) {
+        if (! $this->matchesIncludedNamespace($class) && ! in_array($class, $this->explicitModelClasses(), true)) {
             return false;
         }
 
@@ -153,7 +145,7 @@ class EloquentDiscovery
     {
         $namespaces = array_filter((array) config('connect-filament.discovery.included_model_namespaces', []));
         if ($namespaces === []) {
-            return true;
+            return false;
         }
 
         foreach ($namespaces as $namespace) {
@@ -163,6 +155,21 @@ class EloquentDiscovery
         }
 
         return false;
+    }
+
+    private function explicitModelClasses(): array
+    {
+        $classes = [];
+        foreach ((array) config('connect-filament.resources', []) as $resource) {
+            if (is_array($resource) && is_string($resource['model'] ?? null)) {
+                $classes[] = $resource['model'];
+            }
+        }
+
+        return array_values(array_unique([
+            ...$classes,
+            ...(array) config('connect-filament.discovery.model_classes', []),
+        ]));
     }
 
     private function isUnsafeField(Model $model, string $field): bool

@@ -15,6 +15,7 @@ Report vulnerabilities privately through the repository security advisory flow o
 - OAuth authorization code with PKCE is the only setup path.
 - Setup routes require authenticated Filament/admin access.
 - Callback validation includes state, PKCE, expiry, host, and exact redirect URI.
+- OAuth, redirect, site, and control-plane URLs must use HTTPS outside localhost development.
 - Refresh credentials, PKCE verifiers, and server signing credentials are encrypted at rest.
 - Signed server-to-server requests include method, path, normalized query string, timestamp, nonce, installation id, and body hash.
 - Nonce replay protection is atomic.
@@ -22,3 +23,5 @@ Report vulnerabilities privately through the repository security advisory flow o
 - Reads and writes are limited to explicitly declared fields.
 - Write grants do not expose delete.
 - Browser/public payloads must never contain credentials.
+
+See `docs/security/threat-model.md` for the release-candidate threat model.

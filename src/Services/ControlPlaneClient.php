@@ -158,7 +158,7 @@ class ControlPlaneClient
             return null;
         }
 
-        return in_array(parse_url($url, PHP_URL_SCHEME), ['http', 'https'], true) ? $url : null;
+        return UrlPolicy::publicUrlOrNull($url);
     }
 
     private function path(string $key): string

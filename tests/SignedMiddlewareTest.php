@@ -27,7 +27,9 @@ final class SignedMiddlewareTest extends TestCase
 
         $headers = $this->sign($installation, 'GET', $path, null, '', 'bad_signature');
         $headers[SignedRequest::SIGNATURE_HEADER] = str_repeat('0', 64);
-        $this->withHeaders($headers)->get($path, ['Accept' => 'application/json'])->assertUnauthorized();
+        $this->withHeaders($headers)->get($path, ['Accept' => 'application/json'])
+            ->assertUnauthorized()
+            ->assertExactJson(['error' => 'Invalid connect signature']);
 
         $this->withHeaders($this->sign($installation, 'GET', $path, 'a=1', '', 'bad_query'))
             ->get($path.'?b=2', ['Accept' => 'application/json'])

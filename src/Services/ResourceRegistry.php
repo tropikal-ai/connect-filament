@@ -146,7 +146,10 @@ class ResourceRegistry
     {
         return array_values(array_unique([
             $this->identifierFor($resource),
-            ...array_keys($resource['fields'] ?? []),
+            ...array_keys(array_filter(
+                $resource['fields'] ?? [],
+                fn (mixed $definition): bool => is_array($definition) && ($definition['readable'] ?? true) !== false,
+            )),
         ]));
     }
 
@@ -165,7 +168,7 @@ class ResourceRegistry
             $fields[$field] = new FieldDescriptor(
                 name: $field,
                 type: (string) ($definition['type'] ?? 'string'),
-                readable: true,
+                readable: ($definition['readable'] ?? true) !== false,
                 writable: ($definition['writable'] ?? true) !== false,
                 required: (bool) ($definition['required'] ?? false),
             );

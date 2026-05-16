@@ -6,6 +6,7 @@ namespace TropikalAI\ConnectFilament\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 use TropikalAI\Connect\Application\SignedRequestVerifier;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
@@ -44,7 +45,12 @@ class VerifySignedConnectRequest
                 $request->headers->all(),
             );
         } catch (ConnectException $exception) {
-            return response()->json(['error' => $exception->getMessage()], 401);
+            Log::warning('Connect signed request rejected.', [
+                'installation_id' => $routeInstallationId,
+                'reason' => $exception->getMessage(),
+            ]);
+
+            return response()->json(['error' => 'Invalid connect signature'], 401);
         }
 
         $request->attributes->set('connect_filament_installation', $installation);

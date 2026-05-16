@@ -28,6 +28,15 @@ final class CapabilityDiscoveryTest extends TestCase
         $this->assertNotContains(User::class, array_column($resources, 'model'));
     }
 
+    public function test_empty_discovery_namespaces_do_not_scan_every_loaded_model(): void
+    {
+        config()->set('connect-filament.resources', []);
+        config()->set('connect-filament.discovery.model_classes', []);
+        config()->set('connect-filament.discovery.included_model_namespaces', []);
+
+        $this->assertSame([], app(EloquentDiscovery::class)->discover());
+    }
+
     public function test_default_grants_expose_nothing(): void
     {
         $installation = $this->connectedInstallation();

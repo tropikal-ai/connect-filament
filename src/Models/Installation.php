@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use TropikalAI\Connect\Domain\Security\SensitiveData;
+use TropikalAI\ConnectFilament\Services\UrlPolicy;
 
 /**
  * @property int $id
@@ -155,7 +156,7 @@ class Installation extends Model
         $website = is_array($settings['website'] ?? null) ? $settings['website'] : [];
         $url = $website['detail_url'] ?? null;
 
-        return is_string($url) && in_array(parse_url($url, PHP_URL_SCHEME), ['http', 'https'], true) ? $url : null;
+        return UrlPolicy::publicUrlOrNull($url);
     }
 
     public static function embedSnippet(?string $prefix = null): string

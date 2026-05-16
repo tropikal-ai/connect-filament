@@ -15,6 +15,7 @@ use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\ControlPlaneClient;
+use TropikalAI\ConnectFilament\Services\UrlPolicy;
 
 class EmbedController extends Controller
 {
@@ -201,7 +202,7 @@ class EmbedController extends Controller
 
     private function controlPlaneUrl(): string
     {
-        return rtrim((string) config('connect-filament.control_plane.base_url'), '/');
+        return UrlPolicy::trustedBaseUrl((string) config('connect-filament.control_plane.base_url'), 'The control plane URL');
     }
 
     private function rewriteAssetPrefixes(string $body): string
@@ -229,22 +230,19 @@ class EmbedController extends Controller
 
     private function visitorOrigin(Request $request): string
     {
-        $declared = trim((string) $request->headers->get('X-Embed-Origin', ''));
-        if ($declared !== '') {
-            return $declared;
-        }
-
         $origin = trim((string) $request->headers->get('Origin', ''));
-        if ($origin !== '') {
-            return $origin;
+        if ($trusted = UrlPolicy::originOrNull($origin)) {
+            return $trusted;
         }
 
         $referer = trim((string) $request->headers->get('Referer', ''));
-        if ($referer !== '') {
-            $parts = parse_url($referer);
-            if (is_array($parts) && isset($parts['scheme'], $parts['host'])) {
-                return $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
-            }
+        if ($trusted = UrlPolicy::originOrNull($referer)) {
+            return $trusted;
+        }
+
+        $declared = trim((string) $request->headers->get('X-Embed-Origin', ''));
+        if ($trusted = UrlPolicy::originOrNull($declared)) {
+            return $trusted;
         }
 
         return $request->getSchemeAndHttpHost();

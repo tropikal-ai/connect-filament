@@ -11,6 +11,7 @@ use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
 use TropikalAI\ConnectFilament\Models\AuditLog;
 use TropikalAI\ConnectFilament\Models\Installation;
+use TropikalAI\ConnectFilament\Services\EloquentDiscovery;
 use TropikalAI\ConnectFilament\Services\ResourceRegistry;
 use TropikalAI\ConnectFilament\Tests\Fixtures\Article;
 use TropikalAI\ConnectFilament\Tests\Fixtures\Post;
@@ -86,6 +87,49 @@ final class ResourceApiTest extends TestCase
 
         $this->assertSame('Visible', $data['title']);
         $this->assertArrayNotHasKey('secret_note', $data);
+    }
+
+    public function test_readable_false_fields_are_writeable_but_never_projected(): void
+    {
+        config()->set('connect-filament.resources', [
+            'posts' => [
+                'label' => 'Posts',
+                'model' => Post::class,
+                'identifier' => 'id',
+                'sort_column' => 'id',
+                'fields' => [
+                    'title' => ['type' => 'string', 'required' => true],
+                    'body' => ['type' => 'text', 'readable' => false, 'writable' => true],
+                ],
+            ],
+        ]);
+        $this->app->forgetInstance(ResourceRegistry::class);
+        $this->app->singleton(ResourceRegistry::class, fn (): ResourceRegistry => new ResourceRegistry(
+            config('connect-filament.resources', []),
+            $this->app->make(EloquentDiscovery::class),
+        ));
+
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['posts'],
+            'resource_permissions' => ['posts' => ['read', 'create']],
+        ]);
+        $path = "/api/tropikal-connect/installations/{$installation->public_id}/resources/posts";
+
+        $schema = $this->signedGet($installation, "/api/tropikal-connect/installations/{$installation->public_id}/schema", null, 'writeonly_schema')
+            ->assertOk()
+            ->json('resources.posts');
+
+        $this->assertArrayHasKey('title', $schema['fields']);
+        $this->assertArrayNotHasKey('body', $schema['fields']);
+
+        $created = $this->signedJson($installation, 'POST', $path, [
+            'title' => 'Write-only body',
+            'body' => 'Stored but not returned',
+        ], 'writeonly_create')->assertCreated()->json('data');
+
+        $this->assertSame('Write-only body', $created['title']);
+        $this->assertArrayNotHasKey('body', $created);
+        $this->assertSame('Stored but not returned', Post::query()->firstOrFail()->body);
     }
 
     public function test_writes_reject_unknown_fields_and_mutations_write_audit_logs(): void
@@ -355,6 +399,26 @@ final class ResourceApiTest extends TestCase
                 && $request->hasHeader('X-Embed-Origin', 'https://cms.example.com')
                 && ! $request->hasHeader('Authorization');
         });
+    }
+
+    public function test_public_chat_proxy_ignores_invalid_declared_embed_origin(): void
+    {
+        $this->connectedInstallation([
+            'embed_status' => 'enabled',
+        ]);
+
+        Http::fake([
+            'https://control.example.com/api/connect-filament/embed/info*' => Http::response([
+                'display_name' => 'Example Front Desk',
+            ]),
+        ]);
+
+        $this->getJson('/tropikal-connect/api/chat/info', [
+            'X-Embed-Origin' => 'javascript:alert(1)',
+            'Referer' => 'https://cms.example.com/projects',
+        ])->assertOk();
+
+        Http::assertSent(fn (Request $request): bool => $request->hasHeader('X-Embed-Origin', 'https://cms.example.com'));
     }
 
     public function test_public_chat_info_proxies_with_signed_connect_request(): void

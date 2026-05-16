@@ -136,28 +136,22 @@ class OAuthClient
     public function siteUrl(): string
     {
         $url = trim((string) config('connect-filament.site.url', '')) ?: trim((string) config('app.url', ''));
-        if ($url === '') {
-            throw new \RuntimeException('The application URL is not configured.');
-        }
 
-        return rtrim($url, '/');
+        return UrlPolicy::trustedBaseUrl($url, 'The application URL');
     }
 
     public function controlPlaneUrl(): string
     {
         $url = trim((string) config('connect-filament.control_plane.base_url', ''));
-        if ($url === '') {
-            throw new \RuntimeException('The control plane URL is not configured.');
-        }
 
-        return rtrim($url, '/');
+        return UrlPolicy::trustedBaseUrl($url, 'The control plane URL');
     }
 
     private function redirectBaseUrl(): string
     {
         $url = trim((string) config('connect-filament.oauth.redirect_base_url', '')) ?: $this->siteUrl();
 
-        return rtrim($url, '/');
+        return UrlPolicy::trustedBaseUrl($url, 'The OAuth redirect base URL');
     }
 
     private function registerClient(Installation $installation): string
@@ -197,11 +191,8 @@ class OAuthClient
     private function authorizationServerUrl(): string
     {
         $url = trim((string) config('connect-filament.oauth.authorization_server_url', ''));
-        if ($url === '') {
-            throw new \RuntimeException('The authorization server URL is not configured.');
-        }
 
-        return rtrim($url, '/');
+        return UrlPolicy::trustedBaseUrl($url, 'The authorization server URL');
     }
 
     private function scopes(): string

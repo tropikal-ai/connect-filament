@@ -135,6 +135,7 @@ Only declared readable fields are returned. Only declared writable fields are ac
 
 - Setup routes require authenticated Filament/admin access.
 - The OAuth callback validates state, PKCE, expiry, host, and exact redirect URI.
+- OAuth, redirect, site, and control-plane URLs must use HTTPS outside localhost development.
 - Refresh credentials, PKCE verifiers, and server signing credentials use Laravel encrypted casts.
 - Server-to-server calls use short-lived signed requests from `tropikal-ai/connect`.
 - Signatures cover method, path, normalized query string, timestamp, nonce, installation id, and body hash.
@@ -145,6 +146,8 @@ Only declared readable fields are returned. Only declared writable fields are ac
 - Write grants do not expose delete.
 - Public browser payloads are checked recursively for secret-shaped keys.
 - No secrets are returned to browsers.
+
+See [`docs/security/threat-model.md`](docs/security/threat-model.md) for the release-candidate threat model.
 
 ## Troubleshooting
 
