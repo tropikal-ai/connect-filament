@@ -32,7 +32,7 @@ For clone-based development inside an app, add both local packages as path repos
             "options": {
                 "symlink": true,
                 "versions": {
-                    "tropikal-ai/connect": "0.1.x-dev"
+                    "tropikal-ai/connect": "0.1.0"
                 }
             }
         },
@@ -42,7 +42,7 @@ For clone-based development inside an app, add both local packages as path repos
             "options": {
                 "symlink": true,
                 "versions": {
-                    "tropikal-ai/connect-filament": "0.1.x-dev"
+                    "tropikal-ai/connect-filament": "0.1.0"
                 }
             }
         }

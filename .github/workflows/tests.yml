@@ -17,6 +17,8 @@ jobs:
         with:
           php-version: ${{ matrix.php-version }}
       - run: composer validate --strict
+      - name: Use Connect source repository
+        run: composer config repositories.connect vcs https://github.com/tropikal-ai/connect.git
       - run: composer install --no-interaction
       - run: vendor/bin/pint --test
       - run: vendor/bin/phpstan analyse
