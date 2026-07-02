@@ -154,6 +154,32 @@ final class ResourceApiTest extends TestCase
         $this->assertSame(1, AuditLog::query()->where('action', 'create')->count());
     }
 
+    public function test_control_plane_resources_endpoint_returns_operation_schemas_for_pull_resync(): void
+    {
+        $this->configurePostResource();
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['posts'],
+            'resource_permissions' => ['posts' => ['read', 'create', 'update']],
+        ]);
+        $path = "/api/tropikal-connect/installations/{$installation->public_id}/control-plane-resources";
+
+        $resources = $this->signedGet($installation, $path, null, 'control_plane_pull')
+            ->assertOk()
+            ->json('resources');
+
+        $this->assertArrayHasKey('posts', $resources);
+        $this->assertSame('connect_filament', $resources['posts']['source_kind']);
+
+        // The pull payload carries the same operation input schema as the push,
+        // so the control plane can refresh (and enforce) it on demand.
+        $create = collect($resources['posts']['capabilities'])->firstWhere('operation', 'create');
+        $this->assertNotNull($create, 'create capability should be advertised for pull resync');
+        $this->assertArrayHasKey('title', $create['input_schema']['properties']);
+        $this->assertFalse($create['input_schema']['additionalProperties']);
+        // Non-writable fields stay out of the write schema.
+        $this->assertArrayNotHasKey('published_at', $create['input_schema']['properties']);
+    }
+
     public function test_discovered_create_schema_requires_non_nullable_safe_fields_and_not_generated_slug(): void
     {
         config()->set('connect-filament.resources', []);
