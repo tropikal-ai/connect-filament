@@ -12,6 +12,9 @@ Route::prefix('/installations/{installationId}')
         Route::get('/schema', [ResourceController::class, 'schema'])
             ->name('connect-filament.api.schema');
 
+        Route::get('/control-plane-resources', [ResourceController::class, 'controlPlaneResources'])
+            ->name('connect-filament.api.control-plane-resources');
+
         Route::get('/resources/{resource}', [ResourceController::class, 'index'])
             ->name('connect-filament.api.resources.index');
         Route::post('/resources/{resource}', [ResourceController::class, 'store'])

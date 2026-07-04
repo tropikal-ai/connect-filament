@@ -30,6 +30,19 @@ class ResourceController extends Controller
         ]);
     }
 
+    /**
+     * The full control-plane resource payload (identical to the install/sync
+     * push), so the control plane can pull a fresh copy on demand instead of
+     * waiting for the next push. Unlike schema(), this includes each resource's
+     * capabilities and operation input schemas.
+     */
+    public function controlPlaneResources(Request $request): JsonResponse
+    {
+        return response()->json([
+            'resources' => $this->registry->controlPlaneResourcesFor($this->installation($request)),
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         [, , $resource] = $this->resourceContext($request, 'read');

@@ -16,6 +16,7 @@ final class PackageBootTest extends TestCase
         $this->assertSame('TROPIKAL Connect', config('connect-filament.filament.label'));
         $this->assertTrue(Route::has('connect-filament.oauth.connect'));
         $this->assertTrue(Route::has('connect-filament.api.schema'));
+        $this->assertTrue(Route::has('connect-filament.api.control-plane-resources'));
         $this->assertTrue(View::exists('connect-filament::filament.resources.installation-resource.pages.dashboard'));
         $this->assertTrue(Schema::hasTable('connect_filament_installations'));
         $this->assertTrue(Schema::hasTable('connect_filament_audit_logs'));
