@@ -211,6 +211,36 @@ final class ResourceApiTest extends TestCase
         $this->assertSame('discovered-article', Article::query()->firstOrFail()->slug);
     }
 
+    public function test_create_colliding_with_unique_constraint_returns_typed_409(): void
+    {
+        config()->set('connect-filament.resources', []);
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['articles'],
+            'resource_permissions' => ['articles' => ['create']],
+        ]);
+        $createPath = "/api/tropikal-connect/installations/{$installation->public_id}/resources/articles";
+
+        // Seed a row whose generated slug the next create will collide with.
+        Article::query()->create(['title' => 'Machine Learning', 'content' => 'Original']);
+
+        $response = $this->signedJson($installation, 'POST', $createPath, [
+            'title' => 'Machine Learning',
+            'content' => 'Duplicate attempt',
+        ], 'article_duplicate');
+
+        // A duplicate is a conflict, not malformed input: distinct 409 + typed
+        // body so the control plane classifies it as "already exists", not as a
+        // fix-your-inputs validation error. And nothing extra was written.
+        $response->assertStatus(409)
+            ->assertJson([
+                'error' => 'duplicate_resource',
+                'field' => 'slug',
+            ]);
+        $this->assertStringContainsStringIgnoringCase('already exists', $response->json('message'));
+        $this->assertSame(1, Article::query()->count());
+        $this->assertSame(0, AuditLog::query()->where('action', 'create')->count());
+    }
+
     public function test_list_supports_pagination_search_and_safe_exact_filters(): void
     {
         config()->set('connect-filament.resources', []);
