@@ -6,6 +6,7 @@ namespace TropikalAI\ConnectFilament\Http\Controllers;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -105,6 +106,10 @@ class ResourceController extends Controller
             }
             $record->save();
             $this->audit->record($request, $installation, $slug, $record->getKey(), 'create', ['created' => $validated]);
+        } catch (UniqueConstraintViolationException $exception) {
+            report($exception);
+
+            return $this->resourceConflictError($request, $resource, $exception);
         } catch (QueryException $exception) {
             report($exception);
 
@@ -137,6 +142,10 @@ class ResourceController extends Controller
             }
             $record->save();
             $this->audit->record($request, $installation, $slug, $record->getKey(), 'update', ['before' => $before, 'after' => $validated]);
+        } catch (UniqueConstraintViolationException $exception) {
+            report($exception);
+
+            return $this->resourceConflictError($request, $resource, $exception);
         } catch (QueryException $exception) {
             report($exception);
 
@@ -294,5 +303,77 @@ class ResourceController extends Controller
                 : 'The resource could not be changed. Check application logs.',
             'correlation_id' => $correlationId !== '' ? $correlationId : null,
         ]), $status);
+    }
+
+    /**
+     * A unique-constraint collision is not malformed data and retrying will not
+     * help — the record already exists. Return a distinct 409 the control plane
+     * can classify honestly ("already exists") instead of steering the operator
+     * to "fix your inputs". The offending field is surfaced when derivable, but
+     * only from the resource's own writable fields so no internal schema leaks.
+     */
+    private function resourceConflictError(
+        Request $request,
+        array $resource,
+        UniqueConstraintViolationException $exception,
+    ): JsonResponse {
+        $correlationId = (string) ($request->headers->get('X-Tropikal-Correlation-Id')
+            ?: $request->headers->get('X-Request-Id')
+            ?: '');
+
+        $field = $this->conflictFieldFor($resource, $exception);
+
+        return response()->json(array_filter([
+            'error' => 'duplicate_resource',
+            'message' => $field !== null
+                ? "A record with this {$field} already exists."
+                : 'A record with these details already exists.',
+            'field' => $field,
+            'correlation_id' => $correlationId !== '' ? $correlationId : null,
+        ], static fn ($value): bool => $value !== null), 409);
+    }
+
+    /**
+     * Best-effort map from the database's unique-constraint name back to one of
+     * the resource's own declared field names. Never returns a field the
+     * resource does not declare, so the response can't disclose columns outside
+     * the published contract.
+     *
+     * The exception message carries the full failing SQL (column list, bindings)
+     * so we must first isolate the constraint token — otherwise a field that
+     * merely appears in the INSERT column list (e.g. created_at) would match.
+     * Handles the three drivers we run against:
+     *   - SQLite:   "UNIQUE constraint failed: research_posts.slug"
+     *   - Postgres: 'duplicate key value violates unique constraint "..._slug_unique"'
+     *   - MySQL:    "Duplicate entry 'x' for key 'research_posts_slug_unique'"
+     */
+    private function conflictFieldFor(array $resource, UniqueConstraintViolationException $exception): ?string
+    {
+        $message = $exception->getMessage();
+        $token = '';
+        if (preg_match('/unique constraint failed:\s*([^\s(]+)/i', $message, $m)) {
+            $token = $m[1];
+        } elseif (preg_match('/unique constraint\s+"([^"]+)"/i', $message, $m)) {
+            $token = $m[1];
+        } elseif (preg_match("/for key '([^']+)'/i", $message, $m)) {
+            $token = $m[1];
+        }
+        if ($token === '') {
+            return null;
+        }
+
+        $token = strtolower($token);
+        $candidates = array_keys($resource['fields'] ?? []);
+        // Prefer the longest matching field name so a compound column wins over a
+        // shorter substring of it.
+        usort($candidates, static fn ($a, $b): int => strlen((string) $b) <=> strlen((string) $a));
+        foreach ($candidates as $field) {
+            $needle = strtolower((string) $field);
+            if ($needle !== '' && str_contains($token, $needle)) {
+                return (string) $field;
+            }
+        }
+
+        return null;
     }
 }
