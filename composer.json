@@ -16,7 +16,7 @@
     ],
     "require": {
         "php": "^8.2",
-        "filament/filament": "^3.2",
+        "filament/filament": "^3.2 || ^5.0",
         "laravel/framework": "^11.0|^12.0",
         "tropikal-ai/connect": "^0.1"
     },
