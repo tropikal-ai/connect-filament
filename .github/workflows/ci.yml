@@ -19,10 +19,9 @@ permissions:
 
 jobs:
   # The shared Connect-family quality gate (single source of CI truth).
-  # TODO(after tropikal-ai/connect#4 merges): flip the pin to
-  # tropikal-ai/connect/.github/workflows/php-quality.yml@<sha or tag>.
+  # Pinned to an immutable commit; Dependabot proposes the bumps.
   quality:
-    uses: realbotbob/connect/.github/workflows/php-quality.yml@e149bb948fbf140c9c5a1d918e452d3917001489
+    uses: tropikal-ai/connect/.github/workflows/php-quality.yml@c7b27d5da27ffe24fb114b51d3c979d8be43291a
     with:
       pre-install: composer config repositories.connect vcs https://github.com/tropikal-ai/connect.git
 
