@@ -53,6 +53,11 @@ return [
         'base_url' => env('CONNECT_FILAMENT_API_BASE_URL'),
         'signature_tolerance_seconds' => (int) env('CONNECT_FILAMENT_SIGNATURE_TOLERANCE_SECONDS', 300),
         'nonce_cache_seconds' => (int) env('CONNECT_FILAMENT_NONCE_CACHE_SECONDS', 300),
+        // Replay protection needs a shared, persistent cache. Null uses the
+        // app's default store; the nonce store fails closed if that resolves to
+        // a non-durable driver (array/null). Point this at redis/memcached/
+        // database in production if the default store is not persistent.
+        'nonce_cache_store' => env('CONNECT_FILAMENT_NONCE_CACHE_STORE'),
     ],
 
     'embed' => [

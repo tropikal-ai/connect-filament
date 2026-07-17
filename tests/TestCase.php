@@ -45,6 +45,9 @@ abstract class TestCase extends BaseTestCase
         $app['config']->set('app.key', 'base64:nF1hRQ7s8TtsUvCcllFH9MjJL99qeqdq5BfL40EprR0=');
         $app['config']->set('app.url', 'https://cms.example.com');
         $app['config']->set('cache.default', 'array');
+        // Nonce replay protection must use a persistent store; the sqlite-backed
+        // database cache is fresh per test, so it is both durable and isolated.
+        $app['config']->set('connect-filament.api.nonce_cache_store', 'database');
         $app['config']->set('database.default', 'testing');
         $app['config']->set('database.connections.testing', [
             'driver' => 'sqlite',
@@ -189,6 +192,17 @@ abstract class TestCase extends BaseTestCase
                 $table->text('content');
                 $table->string('category')->default('Research');
                 $table->timestamps();
+            });
+        }
+
+        // A real, persistent cache backend for the nonce store so replay
+        // protection is exercised as it would be in production (the default
+        // 'array' driver is rejected by CacheNonceStore).
+        if (! Schema::hasTable('cache')) {
+            Schema::create('cache', function (Blueprint $table): void {
+                $table->string('key')->primary();
+                $table->mediumText('value');
+                $table->integer('expiration');
             });
         }
     }
