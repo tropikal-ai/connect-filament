@@ -21,7 +21,7 @@ jobs:
   # The shared Connect-family quality gate (single source of CI truth).
   # Pinned to an immutable commit; Dependabot proposes the bumps.
   quality:
-    uses: tropikal-ai/connect/.github/workflows/php-quality.yml@c7b27d5da27ffe24fb114b51d3c979d8be43291a
+    uses: tropikal-ai/connect/.github/workflows/php-quality.yml@04283eb3d5624aaf618de0517bd14001cfa74be5
     with:
       pre-install: composer config repositories.connect vcs https://github.com/tropikal-ai/connect.git
 
