@@ -85,6 +85,19 @@ class EmbedController extends Controller
         return $this->proxy($request, $controlPlane, 'POST', 'chat', $request->getContent() ?: '');
     }
 
+    /**
+     * Restore a visitor's own transcript from an opaque resume capability.
+     *
+     * The `resume_token` query parameter rides through `proxy()`'s existing
+     * query forwarding; this adapter never inspects or stores it. The control
+     * plane returns the identical empty body for an absent, forged or expired
+     * capability, so there is nothing here to branch on and nothing to leak.
+     */
+    public function chatSession(Request $request, ControlPlaneClient $controlPlane): Response|JsonResponse
+    {
+        return $this->proxy($request, $controlPlane, 'GET', 'session', '');
+    }
+
     private function proxy(Request $request, ControlPlaneClient $controlPlane, string $method, string $action, string $body): Response|JsonResponse
     {
         $installation = $this->activeEmbedInstallation();
