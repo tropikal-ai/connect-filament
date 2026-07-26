@@ -17,6 +17,14 @@ final class PackageBootTest extends TestCase
         $this->assertTrue(Route::has('connect-filament.oauth.connect'));
         $this->assertTrue(Route::has('connect-filament.api.schema'));
         $this->assertTrue(Route::has('connect-filament.api.control-plane-resources'));
+
+        // Every embed route the widget calls must exist. `session` was missing
+        // once: the widget requested it, Laravel returned an HTML 404, and the
+        // client degraded to greeting as new — so transcript resume silently
+        // never worked on any bridged site, with nothing in the logs.
+        $this->assertTrue(Route::has('connect-filament.embed.chat.info'));
+        $this->assertTrue(Route::has('connect-filament.embed.chat'));
+        $this->assertTrue(Route::has('connect-filament.embed.chat.session'));
         $this->assertTrue(View::exists('connect-filament::filament.resources.installation-resource.pages.dashboard'));
         $this->assertTrue(Schema::hasTable('connect_filament_installations'));
         $this->assertTrue(Schema::hasTable('connect_filament_audit_logs'));
