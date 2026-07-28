@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace TropikalAI\ConnectFilament\Filament\Resources;
 
-use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables\Table;
+use Illuminate\Contracts\Support\Htmlable;
 use TropikalAI\ConnectFilament\Filament\Resources\InstallationResource\Pages\Dashboard;
 use TropikalAI\ConnectFilament\Models\Installation;
 
@@ -14,7 +14,10 @@ class InstallationResource extends Resource
 {
     protected static ?string $model = Installation::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-link';
+    public static function getNavigationIcon(): string | Htmlable | null
+    {
+        return 'heroicon-o-link';
+    }
 
     public static function getNavigationLabel(): string
     {
@@ -51,11 +54,6 @@ class InstallationResource extends Resource
     public static function canCreate(): bool
     {
         return false;
-    }
-
-    public static function form(Form $form): Form
-    {
-        return $form;
     }
 
     public static function table(Table $table): Table
