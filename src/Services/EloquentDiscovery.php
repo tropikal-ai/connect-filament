@@ -67,7 +67,9 @@ class EloquentDiscovery
         }
 
         $slug = Str::of(class_basename($class))->snake()->plural()->toString();
-        SensitiveData::assertPublicKey($slug);
+        if (SensitiveData::isSensitiveKey($slug)) {
+            return null;
+        }
         SensitiveData::assertPublicPayload($fields);
 
         return [
