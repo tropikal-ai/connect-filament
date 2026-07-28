@@ -18,6 +18,28 @@ permissions:
   contents: read
 
 jobs:
+  filament-compatibility:
+    name: PHP ${{ matrix.php }} / Filament ${{ matrix.filament }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.2", "8.3", "8.4"]
+        filament: ["^3.2", "^4.0"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, sqlite, pdo_sqlite
+          coverage: none
+          tools: composer:v2
+      - run: composer config repositories.connect vcs https://github.com/tropikal-ai/connect.git
+      - run: composer require "tropikal-ai/connect:dev-codex/connector-chat-auto-injection as 0.2.0" --no-update
+      - run: composer update "filament/filament:${{ matrix.filament }}" --with-all-dependencies --no-interaction --prefer-dist
+      - run: composer test
+      - run: composer analyse
+
   # The shared Connect-family quality gate (single source of CI truth).
   # Pinned to an immutable commit; Dependabot proposes the bumps.
   quality:
@@ -30,7 +52,7 @@ jobs:
   ci:
     name: CI green
     if: always()
-    needs: [quality]
+    needs: [quality, filament-compatibility]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

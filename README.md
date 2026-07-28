@@ -8,10 +8,8 @@ Laravel + Filament integration for TROPIKAL Connect.
 
 - PHP 8.2 or newer
 - Laravel 11 or 12
-- Filament 3
+- Filament 3.2 or 4.x
 - Composer 2
-
-Filament 4 or newer is not claimed by this package.
 
 ## Install
 
@@ -97,6 +95,39 @@ The package discovers safe Eloquent business-object candidates, excludes framewo
 Read grants create list/get capabilities. Write grants create create/update capabilities. Delete grants create a destructive delete capability that requires confirmation.
 List capabilities support `page`, `per_page`, `limit`, `search`, and exact filters for safe readable scalar fields such as `slug` or `category`.
 
+## Website Chat placement
+
+Connected installations expose three independent states on the TROPIKAL
+Connect page: connector connection, Website Chat activation in TROPIKAL, and
+local automatic placement. **Show chat bubble on website** defaults on when the
+setting is absent; an explicit off value always wins.
+
+The package permanently installs only the stable same-origin
+`/tropikal-connect/assets/public-channels.js` bootstrap. It loads the allowlisted
+same-origin `chat-widget.js` only when local placement is on and the control
+plane reports an active Chat binding. Inactive, disconnected, and error states
+render nothing for visitors.
+
+Laravel-rendered public HTML is handled by the included idempotent middleware.
+Configure public path eligibility under `public_components.middleware`. API,
+Filament admin, OAuth, download, JSON, streamed, compressed, and unsuccessful
+responses are excluded by default.
+
+For a static Vite build served directly by the web server, run after the build:
+
+```bash
+php artisan tropikal-connect:inject-public-components --path=../dist
+```
+
+The command supports repeated `--path` options and directories with multiple
+HTML entry points. It inserts exactly one shared bootstrap, is idempotent, and
+fails the build if an HTML entry cannot be updated. It never injects the heavy
+Chat widget directly.
+
+The admin actions **Open website** and **Configure in Tropikal** use only the
+validated canonical site URL and the control-plane detail URL returned during
+installation setup.
+
 Optional discovery configuration:
 
 ```php
@@ -149,6 +180,8 @@ Only declared readable fields are returned. Only declared writable fields are ac
 - Eloquent discovery excludes secret-shaped fields before grants can be enabled.
 - Write grants do not expose delete.
 - Public browser payloads are checked recursively for secret-shaped keys.
+- Local placement changes use Filament/Livewire authorization and CSRF
+  protection; public Chat info is short-circuited before upstream when off.
 - No secrets are returned to browsers.
 
 See [`docs/security/threat-model.md`](docs/security/threat-model.md) for the release-candidate threat model.

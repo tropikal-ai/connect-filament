@@ -149,7 +149,7 @@ final class OAuthSetupTest extends TestCase
                 'website_connection' => [
                     'id' => 'website_123',
                     'name' => 'Example',
-                    'detail_url' => 'https://website.example.com/websites/website_123',
+                    'detail_url' => 'https://control.example.com/websites/website_123',
                 ],
             ]),
         ]);
@@ -160,7 +160,7 @@ final class OAuthSetupTest extends TestCase
         $installation->refresh();
         $this->assertSame(Installation::STATUS_CONNECTED, $installation->status);
         $this->assertSame('refresh_123', $installation->oauth_refresh_token_encrypted);
-        $this->assertSame('https://website.example.com/websites/website_123', $installation->websiteDetailUrl());
+        $this->assertSame('https://control.example.com/websites/website_123', $installation->websiteDetailUrl());
         $this->assertNull($installation->oauth_state_hash);
         $this->assertNull($installation->oauth_code_verifier_encrypted);
 

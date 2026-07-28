@@ -14,6 +14,10 @@ Laravel Filament projects need a one-click way to connect a site to a private co
 - Verify server-to-server requests with the shared `tropikal-ai/connect` primitives.
 - Discover Eloquent business-object candidates, but expose no resources until an admin grants read, write, or delete access.
 - Keep public status and embed payloads free of secret-shaped keys.
+- Use the shared public-channel service and assets for same-origin Website Chat.
+- Support connector-controlled automatic placement for Laravel HTML and static
+  build output without allowing the control plane to mutate customer HTML.
+- Support Filament 3.2 and 4.x.
 
 ## Non-Goals
 
@@ -50,6 +54,18 @@ session stack, because visitor chat is authenticated by a server-to-server
 signed request to the control plane rather than by a Laravel session or CSRF
 token.
 
+The local `public_components.chat.auto_inject` setting defaults to enabled when
+absent and is stored in the installation settings JSON. Explicit false returns
+`chat_not_enabled` before any control-plane request. Laravel HTML response
+middleware and the static build command install only the versioned shared
+bootstrap; admin/API/OAuth/download/JSON/streamed/compressed responses are never
+mutated. Configure links must share the trusted control-plane host.
+
 ## Test Plan
 
-Orchestra Testbench covers package boot, Filament registration, OAuth setup, encrypted persistence, resource access rules, audit logging, public payload safety, sessionless public embed chat proxying, signed request rejection cases, and SQLite in-memory execution.
+Orchestra Testbench covers package boot, Filament registration, OAuth setup,
+encrypted persistence, resource access rules, audit logging, public payload
+safety, sessionless public embed chat proxying, placement defaults and
+short-circuiting, middleware exclusions, static injection idempotency, signed
+request rejection cases, and SQLite in-memory execution. CI runs PHP 8.2–8.4
+against Filament 3.2 and 4.x.

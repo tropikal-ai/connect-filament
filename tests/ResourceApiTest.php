@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
+use TropikalAI\Connect\Infrastructure\PublicChannels\PublicAssets;
 use TropikalAI\ConnectFilament\Models\AuditLog;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\EloquentDiscovery;
@@ -345,7 +346,7 @@ final class ResourceApiTest extends TestCase
             'embed_public_id' => 'embed_123',
             'settings' => [
                 'website' => [
-                    'detail_url' => 'https://website.example.com/websites/website_123',
+                    'detail_url' => 'https://control.example.com/websites/website_123',
                 ],
             ],
         ]);
@@ -355,35 +356,35 @@ final class ResourceApiTest extends TestCase
             ->json();
 
         SensitiveData::assertPublicPayload($payload);
-        $this->assertSame('https://website.example.com/websites/website_123', $payload['website']['detail_url']);
+        $this->assertSame('https://control.example.com/websites/website_123', $payload['website']['detail_url']);
         $this->assertArrayNotHasKey('workspace_id', $payload['account']);
         $this->assertArrayNotHasKey('oauth_refresh_token_encrypted', $payload);
         $this->assertArrayNotHasKey('server_signing_key_encrypted', $payload);
     }
 
-    public function test_public_chat_embed_asset_is_rewritten_to_configured_prefix(): void
+    public function test_public_chat_embed_asset_uses_the_shared_versioned_allowlist(): void
     {
-        config()->set('connect-filament.embed.asset_rewrite_prefixes', ['/legacy-connect']);
+        $this->connectedInstallation();
+        $version = PublicAssets::version();
 
         Http::fake([
-            'https://control.example.com/embed/chat-widget.js' => Http::response(
-                "fetch('/legacy-connect/api/chat/info');",
+            'https://control.example.com/embed/chat-widget.js*' => Http::response(
+                "fetch('/tropikal-connect/api/chat/info');",
                 200,
                 ['Content-Type' => 'application/javascript; charset=utf-8'],
             ),
         ]);
 
-        $this->get('/tropikal-connect/embed/chat-widget.js')
+        $this->get('/tropikal-connect/embed/chat-widget.js?v='.$version)
             ->assertOk()
             ->assertHeader('X-Content-Type-Options', 'nosniff')
-            ->assertSee('/tropikal-connect/api/chat/info', false)
-            ->assertDontSee('/legacy-connect', false);
+            ->assertSee('/tropikal-connect/api/chat/info', false);
     }
 
     public function test_public_chat_info_returns_not_enabled_without_connected_embed(): void
     {
         $this->getJson('/tropikal-connect/api/chat/info')
-            ->assertStatus(503)
+            ->assertNotFound()
             ->assertExactJson([
                 'error' => 'chat_not_enabled',
                 'message' => 'Website chat is not enabled for this site.',
@@ -405,8 +406,8 @@ final class ResourceApiTest extends TestCase
         $this->getJson('/tropikal-connect/api/chat/info')
             ->assertStatus(503)
             ->assertExactJson([
-                'error' => 'chat_not_enabled',
-                'message' => 'Website chat is not enabled for this site.',
+                'error' => 'chat_unavailable',
+                'message' => 'Website chat is temporarily unavailable.',
             ])
             ->assertJsonMissing(['detail' => 'Connect installation is missing server credentials']);
     }
@@ -549,7 +550,7 @@ final class ResourceApiTest extends TestCase
             ->assertJsonPath('display_name', 'Example Front Desk');
 
         Http::assertSent(function (Request $request) use ($installation): bool {
-            return $request->url() === 'https://control.example.com/api/connect-filament/embed/info?a=1&b=2'
+            return $request->url() === 'https://control.example.com/api/connect-filament/embed/info'
                 && $request->hasHeader(SignedRequest::INSTALLATION_HEADER, (string) $installation->public_id)
                 && $request->hasHeader(SignedRequest::SIGNATURE_HEADER)
                 && $request->hasHeader(SignedRequest::BODY_HASH_HEADER, hash('sha256', ''))

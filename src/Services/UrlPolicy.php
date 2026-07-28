@@ -31,6 +31,19 @@ class UrlPolicy
         return self::isTrustedHttpUrl($url) ? $url : null;
     }
 
+    public static function publicUrlForBaseOrNull(mixed $url, mixed $baseUrl): ?string
+    {
+        $public = self::publicUrlOrNull($url);
+        $base = self::publicUrlOrNull($baseUrl);
+        if ($public === null || $base === null) {
+            return null;
+        }
+        $publicHost = strtolower((string) parse_url($public, PHP_URL_HOST));
+        $baseHost = strtolower((string) parse_url($base, PHP_URL_HOST));
+
+        return $publicHost !== '' && hash_equals($baseHost, $publicHost) ? $public : null;
+    }
+
     public static function originOrNull(mixed $url): ?string
     {
         $url = self::publicUrlOrNull($url);

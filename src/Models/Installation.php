@@ -156,7 +156,12 @@ class Installation extends Model
         $website = is_array($settings['website'] ?? null) ? $settings['website'] : [];
         $url = $website['detail_url'] ?? null;
 
-        return UrlPolicy::publicUrlOrNull($url);
+        return UrlPolicy::publicUrlForBaseOrNull($url, $this->control_plane_url);
+    }
+
+    public function canonicalSiteUrl(): ?string
+    {
+        return UrlPolicy::publicUrlOrNull($this->site_url);
     }
 
     public static function embedSnippet(?string $prefix = null): string
@@ -171,6 +176,10 @@ class Installation extends Model
 
     public function markDisconnected(): void
     {
+        $settings = is_array($this->settings) ? $this->settings : [];
+        $publicComponents = is_array($settings['public_components'] ?? null)
+            ? ['public_components' => $settings['public_components']]
+            : [];
         $this->forceFill([
             'status' => self::STATUS_NOT_CONNECTED,
             'account_id' => null,
@@ -190,7 +199,7 @@ class Installation extends Model
             'embed_display_name' => null,
             'embed_enabled_at' => null,
             'last_synced_at' => now(),
-            'settings' => [],
+            'settings' => $publicComponents,
         ])->save();
     }
 }
