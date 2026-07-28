@@ -25,7 +25,8 @@ return new class extends Migration
             $table->text('oauth_code_verifier_encrypted')->nullable();
             $table->timestamp('oauth_state_expires_at')->nullable();
             $table->timestamp('connected_at')->nullable();
-            $table->string('control_plane_installation_id', 160)->nullable()->index();
+            $table->string('control_plane_installation_id', 160)->nullable();
+            $table->index('control_plane_installation_id', 'connect_filament_control_plane_id_idx');
             $table->text('server_signing_key_encrypted')->nullable();
             $table->json('allowed_resources')->nullable();
             $table->json('resource_permissions')->nullable();
