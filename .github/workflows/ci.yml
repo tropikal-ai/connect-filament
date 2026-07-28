@@ -36,7 +36,8 @@ jobs:
           tools: composer:v2
       - run: composer config repositories.connect vcs https://github.com/tropikal-ai/connect.git
       - run: composer require "tropikal-ai/connect:dev-codex/connector-chat-auto-injection as 0.2.0" --no-update
-      - run: composer update "filament/filament:${{ matrix.filament }}" --with-all-dependencies --no-interaction --prefer-dist
+      - run: composer require "filament/filament:${{ matrix.filament }}" --no-update
+      - run: composer update --with-all-dependencies --no-interaction --prefer-dist
       - run: composer test
       - run: composer analyse
 
@@ -45,7 +46,9 @@ jobs:
   quality:
     uses: tropikal-ai/connect/.github/workflows/php-quality.yml@c7b27d5da27ffe24fb114b51d3c979d8be43291a
     with:
-      pre-install: composer config repositories.connect vcs https://github.com/tropikal-ai/connect.git
+      pre-install: |
+        composer config repositories.connect vcs https://github.com/tropikal-ai/connect.git
+        composer require "tropikal-ai/connect:dev-codex/connector-chat-auto-injection as 0.2.0" --no-update
 
   # Single stable check for branch protection: "CI green" fails when any
   # quality job failed, was cancelled, or was skipped.
