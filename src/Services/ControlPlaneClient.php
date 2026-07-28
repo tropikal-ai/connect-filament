@@ -112,6 +112,9 @@ class ControlPlaneClient
         $account = is_array($body['account'] ?? null) ? $body['account'] : [];
         $embed = is_array($body['embed'] ?? null) ? $body['embed'] : [];
         $website = $this->websiteSettingsFromResponse($body);
+        $settings = is_array($installation->settings) ? $installation->settings : [];
+        $settings['resource_count'] = count($body['allowed_resources'] ?? []);
+        $settings['website'] = $website;
 
         $installation->forceFill([
             'status' => Installation::STATUS_CONNECTED,
@@ -128,10 +131,7 @@ class ControlPlaneClient
             'embed_display_name' => $embed['display_name'] ?? null,
             'embed_enabled_at' => (($embed['status'] ?? '') === Installation::EMBED_ENABLED) ? now() : null,
             'last_synced_at' => now(),
-            'settings' => [
-                'resource_count' => count($body['allowed_resources'] ?? []),
-                'website' => $website,
-            ],
+            'settings' => $settings,
         ])->save();
     }
 

@@ -18,10 +18,25 @@
         </div>
     </section>
 
-    @if (($status['embed']['snippet'] ?? null) && (($status['embed']['status'] ?? null) === 'enabled'))
+    @if (($status['status'] ?? null) === 'connected')
         <section class="fi-section rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10">
-            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Embed</p>
-            <code class="mt-3 block overflow-x-auto rounded-lg bg-gray-950 p-4 text-sm text-white">{{ $status['embed']['snippet'] }}</code>
+            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Website chat</p>
+            <p class="mt-1 text-lg font-semibold text-gray-950 dark:text-white">
+                Chat component {{ (($status['embed']['status'] ?? null) === 'enabled') ? 'active' : 'inactive or unavailable' }}
+            </p>
+            <label class="mt-4 flex items-start gap-3">
+                <input type="checkbox" @checked($chatAutoInject)
+                    wire:change="setChatPlacement($event.target.checked)" />
+                <span>
+                    <strong class="block text-gray-950 dark:text-white">Show chat bubble on website</strong>
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Automatically loads the Tropikal chat assistant on public pages.</span>
+                </span>
+            </label>
+            @if ($chatAutoInject && (($status['embed']['status'] ?? null) !== 'enabled'))
+                <p class="mt-3 text-sm text-amber-700 dark:text-amber-300">Automatic placement is enabled, but Website Chat is not active in Tropikal.</p>
+            @elseif (! $chatAutoInject && (($status['embed']['status'] ?? null) === 'enabled'))
+                <p class="mt-3 text-sm text-amber-700 dark:text-amber-300">Website Chat is active in Tropikal but hidden on this website.</p>
+            @endif
         </section>
     @endif
 

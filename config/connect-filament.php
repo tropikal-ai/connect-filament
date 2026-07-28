@@ -68,6 +68,21 @@ return [
         'asset_rewrite_prefixes' => [],
     ],
 
+    'public_components' => [
+        'middleware' => [
+            'enabled' => env('CONNECT_FILAMENT_AUTO_INJECT', true),
+            'include_paths' => ['*'],
+            'exclude_paths' => [
+                'api/*',
+                'admin*',
+                'tropikal-connect/*',
+                'downloads/*',
+                'oauth/*',
+            ],
+        ],
+        'static_entry_points' => [],
+    ],
+
     'discovery' => [
         'enabled' => (bool) env('CONNECT_FILAMENT_DISCOVERY_ENABLED', true),
         'model_classes' => [],

@@ -24,7 +24,12 @@ Route::prefix($prefix)
             Route::get('/embed/info', [EmbedController::class, 'info'])
                 ->name('embed.info');
             Route::get('/embed/{asset}', [EmbedController::class, 'asset'])
-                ->where('asset', 'chat-widget\.js|iframe\.html|iframe\.js|iframe\.css|markdown\.js')
+                ->where('asset', 'chat-widget\.js|iframe\.html|iframe\.js|iframe\.css')
                 ->name('embed.asset');
+            Route::get('/assets/{asset}', [EmbedController::class, 'publicAsset'])
+                ->where('asset', 'public-channels\.js|public-channels\.css')
+                ->name('public.asset');
+            Route::get('/health', [EmbedController::class, 'health'])
+                ->name('health');
         }
     });
