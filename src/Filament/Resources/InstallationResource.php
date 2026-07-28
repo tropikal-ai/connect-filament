@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace TropikalAI\ConnectFilament\Filament\Resources;
 
 use Filament\Resources\Resource;
+use Filament\Panel;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
 use TropikalAI\ConnectFilament\Filament\Resources\InstallationResource\Pages\Dashboard;
@@ -46,7 +47,7 @@ class InstallationResource extends Resource
         return static::getModelLabel();
     }
 
-    public static function getSlug(): string
+    public static function getSlug(?Panel $panel = null): string
     {
         return trim((string) config('connect-filament.filament.slug', 'tropikal-connect'), '/');
     }
