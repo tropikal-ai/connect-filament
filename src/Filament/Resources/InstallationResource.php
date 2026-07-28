@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace TropikalAI\ConnectFilament\Filament\Resources;
 
-use Filament\Resources\Resource;
 use Filament\Panel;
+use Filament\Resources\Resource;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
 use TropikalAI\ConnectFilament\Filament\Resources\InstallationResource\Pages\Dashboard;
@@ -15,7 +15,7 @@ class InstallationResource extends Resource
 {
     protected static ?string $model = Installation::class;
 
-    public static function getNavigationIcon(): string | Htmlable | null
+    public static function getNavigationIcon(): string|Htmlable|null
     {
         return 'heroicon-o-link';
     }
