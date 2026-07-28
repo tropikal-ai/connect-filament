@@ -25,6 +25,7 @@ final class CapabilityDiscoveryTest extends TestCase
         $this->assertSame(Post::class, $resources['posts']['model']);
         $this->assertArrayHasKey('title', $resources['posts']['fields']);
         $this->assertArrayNotHasKey('secret_note', $resources['posts']['fields']);
+        $this->assertArrayNotHasKey('booking_tokens', $resources);
         $this->assertNotContains(User::class, array_column($resources, 'model'));
     }
 
