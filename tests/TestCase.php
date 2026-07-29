@@ -191,6 +191,11 @@ abstract class TestCase extends BaseTestCase
                 $table->string('slug')->unique();
                 $table->text('content');
                 $table->string('category')->default('Research');
+                // Boolean lands as tinyint(1) on both sqlite and MySQL, and a
+                // wider tinyint stays an integer — the two cases field-type
+                // inference has to tell apart.
+                $table->boolean('is_featured')->default(false);
+                $table->unsignedTinyInteger('reading_time_min')->nullable();
                 $table->timestamps();
             });
         }

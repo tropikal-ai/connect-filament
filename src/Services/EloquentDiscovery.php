@@ -56,7 +56,7 @@ class EloquentDiscovery
             }
 
             $fields[$column] = [
-                'type' => $this->fieldType($table, $column),
+                'type' => $this->fieldType($model, $table, $column, $columns[$column] ?? []),
                 'required' => $this->isRequiredField($model, $column, $columns[$column] ?? []),
                 'writable' => $this->isWritableField($model, $column),
             ];
@@ -203,10 +203,55 @@ class EloquentDiscovery
         return $model->getGuarded() !== ['*'] && ! in_array($field, $model->getGuarded(), true);
     }
 
-    private function fieldType(string $table, string $column): string
+    /**
+     * Resolve the Connect field type for a column.
+     *
+     * The model's own cast wins when it declares one: it is driver-independent
+     * and states intent directly. Schema introspection is the fallback, and it
+     * has to be read carefully — MySQL has no native boolean, so `$table->
+     * boolean()` lands as `tinyint(1)` and `Schema::getColumnType()` reports
+     * plain "tinyint". Mapping that to the `string` default let payloads like
+     * `"false"` pass a `string` validation rule and reach the database as a
+     * literal string, which MySQL rejects with SQLSTATE[22007].
+     */
+    private function fieldType(Model $model, string $table, string $column, array $columnMeta = []): string
     {
-        return match (Schema::getColumnType($table, $column)) {
-            'bigint', 'integer', 'smallint' => 'integer',
+        return $this->castFieldType($model, $column)
+            ?? $this->schemaFieldType($table, $column, $columnMeta);
+    }
+
+    private function castFieldType(Model $model, string $column): ?string
+    {
+        $cast = $model->getCasts()[$column] ?? null;
+        if (! is_string($cast) || $cast === '') {
+            return null;
+        }
+
+        // Parameterised casts arrive as "decimal:2", "date:Y-m-d", etc.
+        $cast = strtolower(explode(':', $cast, 2)[0]);
+
+        return match ($cast) {
+            'bool', 'boolean' => 'boolean',
+            'int', 'integer' => 'integer',
+            'array', 'json', 'object', 'collection' => 'json',
+            'date', 'datetime', 'immutable_date', 'immutable_datetime', 'timestamp' => 'datetime',
+            default => null,
+        };
+    }
+
+    private function schemaFieldType(string $table, string $column, array $columnMeta = []): string
+    {
+        $type = Schema::getColumnType($table, $column);
+
+        if ($type === 'tinyint') {
+            // `tinyint(1)` is the MySQL boolean idiom; wider tinyints are ints.
+            $declared = is_string($columnMeta['type'] ?? null) ? $columnMeta['type'] : '';
+
+            return str_contains(strtolower($declared), 'tinyint(1)') ? 'boolean' : 'integer';
+        }
+
+        return match ($type) {
+            'bigint', 'integer', 'smallint', 'mediumint' => 'integer',
             'boolean' => 'boolean',
             'date', 'datetime', 'timestamp' => 'datetime',
             'json' => 'json',
