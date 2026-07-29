@@ -366,18 +366,23 @@ final class ResourceApiTest extends TestCase
         config()->set('connect-filament.embed.asset_rewrite_prefixes', ['/legacy-connect']);
 
         Http::fake([
-            'https://control.example.com/embed/chat-widget.js' => Http::response(
+            'https://control.example.com/embed/chat-widget.js?v=20260729-a11y' => Http::response(
                 "fetch('/legacy-connect/api/chat/info');",
                 200,
                 ['Content-Type' => 'application/javascript; charset=utf-8'],
             ),
         ]);
 
-        $this->get('/tropikal-connect/embed/chat-widget.js')
+        $this->get('/tropikal-connect/embed/chat-widget.js?v=20260729-a11y')
             ->assertOk()
             ->assertHeader('X-Content-Type-Options', 'nosniff')
             ->assertSee('/tropikal-connect/api/chat/info', false)
             ->assertDontSee('/legacy-connect', false);
+
+        Http::assertSent(
+            fn (Request $request): bool => $request->url()
+                === 'https://control.example.com/embed/chat-widget.js?v=20260729-a11y'
+        );
     }
 
     public function test_public_chat_info_returns_not_enabled_without_connected_embed(): void
