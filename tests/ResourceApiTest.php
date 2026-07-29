@@ -211,6 +211,68 @@ final class ResourceApiTest extends TestCase
         $this->assertSame('discovered-article', Article::query()->firstOrFail()->slug);
     }
 
+    public function test_boolean_columns_are_discovered_as_boolean_not_string(): void
+    {
+        config()->set('connect-filament.resources', []);
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['articles'],
+            'resource_permissions' => ['articles' => ['create']],
+        ]);
+
+        $fields = $this->app->make(ResourceRegistry::class)
+            ->controlPlaneResourcesFor($installation)['articles']['fields'];
+
+        // `boolean()` is tinyint(1) under the hood; typing it as `string` let
+        // "false" through validation and into the database as a literal.
+        $this->assertSame('boolean', $fields['is_featured']['type']);
+        // A wider tinyint is a number, not a flag.
+        $this->assertSame('integer', $fields['reading_time_min']['type']);
+    }
+
+    public function test_create_rejects_non_boolean_string_for_boolean_column(): void
+    {
+        config()->set('connect-filament.resources', []);
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['articles'],
+            'resource_permissions' => ['articles' => ['create']],
+        ]);
+        $createPath = "/api/tropikal-connect/installations/{$installation->public_id}/resources/articles";
+
+        // The literal string "false" is not a boolean. This has to fail as a
+        // 422 at the validation layer, not reach MySQL and blow up as a
+        // SQLSTATE[22007] "Incorrect integer value: 'false'".
+        $this->signedJson($installation, 'POST', $createPath, [
+            'title' => 'Stringly Typed',
+            'content' => 'Body',
+            'is_featured' => 'false',
+        ], 'article_bool_string')
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['is_featured']);
+
+        $this->assertSame(0, Article::query()->count());
+    }
+
+    public function test_create_accepts_real_booleans_for_boolean_column(): void
+    {
+        config()->set('connect-filament.resources', []);
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['articles'],
+            'resource_permissions' => ['articles' => ['create']],
+        ]);
+        $createPath = "/api/tropikal-connect/installations/{$installation->public_id}/resources/articles";
+
+        $this->signedJson($installation, 'POST', $createPath, [
+            'title' => 'Featured Article',
+            'content' => 'Body',
+            'is_featured' => true,
+            'reading_time_min' => 7,
+        ], 'article_bool_true')->assertCreated();
+
+        $article = Article::query()->firstOrFail();
+        $this->assertEquals(1, $article->is_featured);
+        $this->assertEquals(7, $article->reading_time_min);
+    }
+
     public function test_create_colliding_with_unique_constraint_returns_typed_409(): void
     {
         config()->set('connect-filament.resources', []);
@@ -366,18 +428,23 @@ final class ResourceApiTest extends TestCase
         config()->set('connect-filament.embed.asset_rewrite_prefixes', ['/legacy-connect']);
 
         Http::fake([
-            'https://control.example.com/embed/chat-widget.js' => Http::response(
+            'https://control.example.com/embed/chat-widget.js?v=20260729-a11y' => Http::response(
                 "fetch('/legacy-connect/api/chat/info');",
                 200,
                 ['Content-Type' => 'application/javascript; charset=utf-8'],
             ),
         ]);
 
-        $this->get('/tropikal-connect/embed/chat-widget.js')
+        $this->get('/tropikal-connect/embed/chat-widget.js?v=20260729-a11y')
             ->assertOk()
             ->assertHeader('X-Content-Type-Options', 'nosniff')
             ->assertSee('/tropikal-connect/api/chat/info', false)
             ->assertDontSee('/legacy-connect', false);
+
+        Http::assertSent(
+            fn (Request $request): bool => $request->url()
+                === 'https://control.example.com/embed/chat-widget.js?v=20260729-a11y'
+        );
     }
 
     public function test_public_chat_info_returns_not_enabled_without_connected_embed(): void

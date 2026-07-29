@@ -17,11 +17,14 @@ class Dashboard extends Page
 {
     protected static string $resource = InstallationResource::class;
 
-    protected static string $view = 'connect-filament::filament.resources.installation-resource.pages.dashboard';
-
     public ?Installation $installation = null;
 
     public array $capabilityGrants = [];
+
+    public function getView(): string
+    {
+        return 'connect-filament::filament.resources.installation-resource.pages.dashboard';
+    }
 
     public function mount(): void
     {

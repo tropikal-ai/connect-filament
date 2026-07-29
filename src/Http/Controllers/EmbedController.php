@@ -39,15 +39,17 @@ class EmbedController extends Controller
         ]);
     }
 
-    public function asset(string $asset): Response
+    public function asset(Request $request, string $asset): Response
     {
         if (! array_key_exists($asset, self::ASSETS)) {
             abort(404);
         }
 
+        $query = $request->getQueryString();
+        $url = $this->controlPlaneUrl().$this->assetPath($asset).($query !== null && $query !== '' ? '?'.$query : '');
         $response = Http::timeout($this->timeoutSeconds())
             ->accept(self::ASSETS[$asset])
-            ->get($this->controlPlaneUrl().$this->assetPath($asset));
+            ->get($url);
 
         if (! $response->successful()) {
             return response('Connect embed asset unavailable.', 502, [
