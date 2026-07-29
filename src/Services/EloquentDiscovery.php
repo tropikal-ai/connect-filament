@@ -66,8 +66,15 @@ class EloquentDiscovery
             return null;
         }
 
+        // A slug the guard rejects means this model must not reach the bridge,
+        // not that the host application is broken. Throwing here propagates out
+        // of discover() and takes down every caller — the Filament dashboard
+        // and the whole resource API — because one model happens to be named
+        // after tokens, keys or secrets. Skip it instead.
         $slug = Str::of(class_basename($class))->snake()->plural()->toString();
-        SensitiveData::assertPublicKey($slug);
+        if (SensitiveData::isSensitiveKey($slug)) {
+            return null;
+        }
         SensitiveData::assertPublicPayload($fields);
 
         return [
