@@ -184,6 +184,14 @@ abstract class TestCase extends BaseTestCase
             });
         }
 
+        if (! Schema::hasTable('test_booking_tokens')) {
+            Schema::create('test_booking_tokens', function (Blueprint $table): void {
+                $table->id();
+                $table->string('label');
+                $table->timestamps();
+            });
+        }
+
         if (! Schema::hasTable('test_articles')) {
             Schema::create('test_articles', function (Blueprint $table): void {
                 $table->id();

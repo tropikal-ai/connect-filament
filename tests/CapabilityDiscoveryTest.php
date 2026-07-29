@@ -12,6 +12,7 @@ use TropikalAI\ConnectFilament\Services\CapabilityGrantManager;
 use TropikalAI\ConnectFilament\Services\ControlPlaneClient;
 use TropikalAI\ConnectFilament\Services\EloquentDiscovery;
 use TropikalAI\ConnectFilament\Services\ResourceRegistry;
+use TropikalAI\ConnectFilament\Tests\Fixtures\BookingToken;
 use TropikalAI\ConnectFilament\Tests\Fixtures\Post;
 use TropikalAI\ConnectFilament\Tests\Fixtures\User;
 
@@ -26,6 +27,26 @@ final class CapabilityDiscoveryTest extends TestCase
         $this->assertArrayHasKey('title', $resources['posts']['fields']);
         $this->assertArrayNotHasKey('secret_note', $resources['posts']['fields']);
         $this->assertNotContains(User::class, array_column($resources, 'model'));
+    }
+
+    public function test_discovery_skips_a_model_whose_own_slug_trips_the_guard(): void
+    {
+        config()->set('connect-filament.discovery.model_classes', [
+            BookingToken::class,
+            Post::class,
+        ]);
+
+        $resources = app(EloquentDiscovery::class)->discover();
+
+        // The point of the test: one guard-rejected model must not deny the
+        // caller every other resource, which is what throwing here did.
+        $this->assertArrayNotHasKey('booking_tokens', $resources);
+        $this->assertArrayHasKey('posts', $resources);
+        $this->assertNull(app(EloquentDiscovery::class)->resourceFor(BookingToken::class));
+
+        foreach (array_keys($resources) as $slug) {
+            $this->assertTrue(SensitiveData::isPublicKey((string) $slug));
+        }
     }
 
     public function test_empty_discovery_namespaces_do_not_scan_every_loaded_model(): void
