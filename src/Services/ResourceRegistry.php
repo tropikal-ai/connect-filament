@@ -11,6 +11,7 @@ use TropikalAI\Connect\Domain\Capabilities\CapabilitySet;
 use TropikalAI\Connect\Domain\Capabilities\FieldDescriptor;
 use TropikalAI\Connect\Domain\Capabilities\OperationDescriptor;
 use TropikalAI\Connect\Domain\Resources\ResourceSchema;
+use TropikalAI\ConnectFilament\Domain\FieldSelection;
 use TropikalAI\ConnectFilament\Models\Installation;
 
 class ResourceRegistry
@@ -113,7 +114,7 @@ class ResourceRegistry
      */
     public function projectFor(Installation $installation, string $slug, Model $record, array $resource): array
     {
-        $selected = $this->schema()->selectedFields($installation->resource_permissions ?? [], $slug);
+        $selected = FieldSelection::fromPermissions($installation->resource_permissions ?? [], $slug);
         if ($selected === null) {
             return $this->project($record, $resource);
         }

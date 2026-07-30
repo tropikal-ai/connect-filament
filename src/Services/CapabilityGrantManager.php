@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TropikalAI\ConnectFilament\Services;
 
-use TropikalAI\Connect\Domain\Resources\ResourceSchema;
+use TropikalAI\ConnectFilament\Domain\FieldSelection;
 use TropikalAI\ConnectFilament\Models\Installation;
 
 /**
@@ -160,7 +160,7 @@ class CapabilityGrantManager
      */
     public function selectedFields(Installation $installation, string $slug): array
     {
-        $selected = $this->schema()->selectedFields($installation->resource_permissions ?? [], $slug);
+        $selected = FieldSelection::fromPermissions($installation->resource_permissions ?? [], $slug);
 
         // Null means no selection was ever recorded, which is what every
         // installation stored before field selection existed. Those keep
@@ -200,7 +200,6 @@ class CapabilityGrantManager
     private function state(Installation $installation): array
     {
         $permissions = $installation->resource_permissions ?? [];
-        $schema = $this->schema();
 
         $state = [];
         foreach ($this->grants($installation) as $slug => $grants) {
@@ -210,7 +209,7 @@ class CapabilityGrantManager
             }
             $state[(string) $slug] = [
                 ...$grants,
-                'fields' => $schema->selectedFields($permissions, (string) $slug),
+                'fields' => FieldSelection::fromPermissions($permissions, (string) $slug),
             ];
         }
 
@@ -277,16 +276,10 @@ class CapabilityGrantManager
             return [];
         }
 
-        // The marker is what makes "the owner unticked everything" legible as a
-        // choice. Without it an empty selection reads as "never chose", and the
-        // projection would fail open and hand over every field again.
-        return [
-            ResourceSchema::FIELD_SELECTION_MARKER,
-            ...array_map(
-                fn (string $field): string => ResourceSchema::FIELD_GRANT_PREFIX.$field,
-                array_values(array_intersect($this->selectableFields($slug), $fields)),
-            ),
-        ];
+        // Always via FieldSelection, whose marker is what makes "the owner
+        // unticked everything" legible as a choice. Without it an empty
+        // selection reads as "never chose" and the projection fails open.
+        return FieldSelection::toGrants(array_intersect($this->selectableFields($slug), $fields));
     }
 
     /**
@@ -302,10 +295,5 @@ class CapabilityGrantManager
         if (! $this->registry->resource($slug)) {
             throw new \InvalidArgumentException("Capability resource is not discoverable: {$slug}");
         }
-    }
-
-    private function schema(): ResourceSchema
-    {
-        return new ResourceSchema($this->registry->all());
     }
 }
