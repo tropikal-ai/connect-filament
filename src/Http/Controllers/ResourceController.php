@@ -46,7 +46,7 @@ class ResourceController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        [, , $resource] = $this->resourceContext($request, 'read');
+        [$installation, $slug, $resource] = $this->resourceContext($request, 'read');
         $modelClass = $resource['model'];
         $query = $modelClass::query()->orderByDesc($this->sortColumn($resource));
 
@@ -68,7 +68,7 @@ class ResourceController extends Controller
 
         return response()->json([
             'data' => collect($paginated->items())
-                ->map(fn (Model $record): array => $this->registry->project($record, $resource))
+                ->map(fn (Model $record): array => $this->registry->projectFor($installation, $slug, $record, $resource))
                 ->all(),
             'meta' => [
                 'current_page' => $paginated->currentPage(),
@@ -81,13 +81,13 @@ class ResourceController extends Controller
 
     public function show(Request $request): JsonResponse
     {
-        [, , $resource] = $this->resourceContext($request, 'read');
+        [$installation, $slug, $resource] = $this->resourceContext($request, 'read');
         $record = $this->findRecord($resource, (string) $request->route('id'));
         if (! $record) {
             return response()->json(['error' => 'Record not found'], 404);
         }
 
-        return response()->json(['data' => $this->registry->project($record, $resource)]);
+        return response()->json(['data' => $this->registry->projectFor($installation, $slug, $record, $resource)]);
     }
 
     public function store(Request $request): JsonResponse
@@ -120,7 +120,7 @@ class ResourceController extends Controller
             return $this->resourceMutationError($request, 500);
         }
 
-        return response()->json(['data' => $this->registry->project($record->fresh() ?? $record, $resource)], 201);
+        return response()->json(['data' => $this->registry->projectFor($installation, $slug, $record->fresh() ?? $record, $resource)], 201);
     }
 
     public function update(Request $request): JsonResponse
@@ -156,7 +156,7 @@ class ResourceController extends Controller
             return $this->resourceMutationError($request, 500);
         }
 
-        return response()->json(['data' => $this->registry->project($record->fresh() ?? $record, $resource)]);
+        return response()->json(['data' => $this->registry->projectFor($installation, $slug, $record->fresh() ?? $record, $resource)]);
     }
 
     public function destroy(Request $request): JsonResponse
@@ -207,10 +207,15 @@ class ResourceController extends Controller
         $before = $this->registry->project($record, $resource);
         $record->{$method}();
         $record = $record->fresh();
+        // The audit log is the site's own record of what changed, so it keeps
+        // the full before/after. Only the response is narrowed to the fields
+        // this installation may receive.
         $after = $record ? $this->registry->project($record, $resource) : [];
         $this->audit->record($request, $installation, $slug, $record?->getKey(), "action:{$action}", ['before' => $before, 'after' => $after]);
 
-        return response()->json(['data' => $after]);
+        return response()->json([
+            'data' => $record ? $this->registry->projectFor($installation, $slug, $record, $resource) : [],
+        ]);
     }
 
     private function installation(Request $request): Installation

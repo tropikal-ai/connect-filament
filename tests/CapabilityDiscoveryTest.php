@@ -73,10 +73,10 @@ final class CapabilityDiscoveryTest extends TestCase
 
         $installation = $manager->set($installation, 'posts', 'read', true);
         $this->assertSame(['posts'], $installation->allowed_resources);
-        $this->assertSame(['read'], $installation->resource_permissions['posts']);
+        $this->assertSame(['read'], $this->operationGrants($installation, 'posts'));
 
         $installation = $manager->set($installation, 'posts', 'write', true);
-        $this->assertSame(['read', 'create', 'update'], $installation->resource_permissions['posts']);
+        $this->assertSame(['read', 'create', 'update'], $this->operationGrants($installation, 'posts'));
         $this->assertNotContains('delete', $installation->resource_permissions['posts']);
 
         $schema = app(ResourceRegistry::class)->controlPlaneResourcesFor($installation);
@@ -85,7 +85,7 @@ final class CapabilityDiscoveryTest extends TestCase
         SensitiveData::assertPublicPayload($schema);
 
         $installation = $manager->set($installation, 'posts', 'delete', true);
-        $this->assertSame(['read', 'create', 'update', 'delete'], $installation->resource_permissions['posts']);
+        $this->assertSame(['read', 'create', 'update', 'delete'], $this->operationGrants($installation, 'posts'));
 
         $schema = app(ResourceRegistry::class)->controlPlaneResourcesFor($installation);
         $operations = array_column($schema['posts']['capabilities'], 'operation');
@@ -151,9 +151,27 @@ final class CapabilityDiscoveryTest extends TestCase
             $payload = $request->data();
             SensitiveData::assertPublicPayload($payload);
 
-            return isset($payload['resources']['posts'])
-                && $payload['resources']['posts']['permissions'] === ['read']
+            $permissions = $payload['resources']['posts']['permissions'] ?? null;
+
+            return is_array($permissions)
+                && in_array('read', $permissions, true)
+                && ! array_intersect(['create', 'update', 'delete'], $permissions)
                 && ! isset($payload['resources']['posts']['fields']['secret_note']);
         });
+    }
+
+    /**
+     * The stored permissions carry the field selection alongside the operation
+     * grants, so a test about which operations were granted has to ask for just
+     * those rather than compare the whole array.
+     *
+     * @return array<int, string>
+     */
+    private function operationGrants(Installation $installation, string $slug): array
+    {
+        return array_values(array_filter(
+            $installation->resource_permissions[$slug] ?? [],
+            fn (string $grant): bool => ! str_starts_with($grant, 'field:') && $grant !== 'fields:selected',
+        ));
     }
 }
