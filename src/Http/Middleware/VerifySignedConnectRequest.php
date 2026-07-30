@@ -11,6 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 use TropikalAI\Connect\Application\SignedRequestVerifier;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
 use TropikalAI\Connect\Exceptions\ConnectException;
+use TropikalAI\ConnectFilament\Domain\ChangeOrigin;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\CacheNonceStore;
 
@@ -54,6 +55,10 @@ class VerifySignedConnectRequest
         }
 
         $request->attributes->set('connect_filament_installation', $installation);
+        // Anything TROPIKAL writes through this request is TROPIKAL's own doing.
+        // The observer drops those, so a Job that edits on change cannot
+        // re-trigger itself off its own edit.
+        ChangeOrigin::stamp($request);
         $response = $next($request);
         $response->headers->set('X-Content-Type-Options', 'nosniff');
         $response->headers->set('Cache-Control', 'no-store');
