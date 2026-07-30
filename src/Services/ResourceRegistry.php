@@ -11,6 +11,7 @@ use TropikalAI\Connect\Domain\Capabilities\CapabilitySet;
 use TropikalAI\Connect\Domain\Capabilities\FieldDescriptor;
 use TropikalAI\Connect\Domain\Capabilities\OperationDescriptor;
 use TropikalAI\Connect\Domain\Resources\ResourceSchema;
+use TropikalAI\ConnectFilament\Domain\FieldSelection;
 use TropikalAI\ConnectFilament\Models\Installation;
 
 class ResourceRegistry
@@ -85,11 +86,45 @@ class ResourceRegistry
         return array_values(array_diff(array_unique($fields), self::LIST_ARGUMENTS));
     }
 
+    /**
+     * Every readable field of a record.
+     *
+     * This is the site's own view — the site's audit log records what actually
+     * changed, not the narrower thing TROPIKAL was sent. Anything leaving the
+     * site goes through projectFor() instead.
+     */
     public function project(Model $record, array $resource): array
     {
         $payload = [];
         foreach ($this->readableFields($resource) as $field) {
             $payload[$field] = $record->getAttribute($field);
+        }
+
+        return $payload;
+    }
+
+    /**
+     * What THIS installation may receive: readable fields narrowed by its
+     * `field:*` grants.
+     *
+     * Every path that hands a record to TROPIKAL — the pull reads, the write
+     * responses, and the change events — narrows here, at the source. A field
+     * the owner unticked never leaves the site, so nothing downstream has to be
+     * trusted to drop it on receipt.
+     */
+    public function projectFor(Installation $installation, string $slug, Model $record, array $resource): array
+    {
+        $selected = FieldSelection::fromPermissions($installation->resource_permissions ?? [], $slug);
+        if ($selected === null) {
+            return $this->project($record, $resource);
+        }
+
+        $identifier = $this->identifierFor($resource);
+        $payload = [];
+        foreach ($this->readableFields($resource) as $field) {
+            if ($field === $identifier || in_array($field, $selected, true)) {
+                $payload[$field] = $record->getAttribute($field);
+            }
         }
 
         return $payload;
