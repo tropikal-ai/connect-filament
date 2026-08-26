@@ -155,6 +155,7 @@ See [`docs/security/threat-model.md`](docs/security/threat-model.md) for the rel
 
 - `403` on `/tropikal-connect/oauth/connect`: the current user is not authenticated for the configured setup middleware.
 - Callback validation failed: the authorization server callback URL must exactly match `APP_URL` plus the configured callback path, unless `CONNECT_FILAMENT_OAUTH_REDIRECT_BASE_URL` is set.
+- Refresh status asks for a reconnect: the stored OAuth refresh credential expired or was revoked. Use the `Reconnect` action, complete authorization, and refresh again.
 - Signed API `401`: the signature, query string, body hash, timestamp, nonce, or installation id did not match.
 - A discovered model is missing: check `included_model_namespaces`, `excluded_model_classes`, and the model's table connection.
 - A field is missing from a business object: secret-shaped, hidden, guarded, relation, and unsafe fields are excluded by default.
