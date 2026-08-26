@@ -166,7 +166,7 @@ class Installation extends Model
             throw new \InvalidArgumentException('The embed route prefix cannot be empty.');
         }
 
-        return sprintf('<script async src="/%s/embed/widget.js"></script>', $prefix);
+        return sprintf('<script async src="/%s/embed/chat-widget.js"></script>', $prefix);
     }
 
     public function markDisconnected(): void

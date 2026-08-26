@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.1 - 2026-08-26
+
+- Fixed the website chat bootstrap so both documented embed URLs load the actual widget.
+- Added an explicit reconnect action and actionable refresh failure feedback for expired OAuth credentials.
+- Show the disabled website-chat state in the Filament dashboard instead of hiding the embed section.
+
 ## 0.2.0 - 2026-08-26
 
 - Added Filament 5 support and aligned the Laravel and Testbench dependency ranges with Filament 5.

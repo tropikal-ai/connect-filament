@@ -23,6 +23,11 @@
             <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Embed</p>
             <code class="mt-3 block overflow-x-auto rounded-lg bg-gray-950 p-4 text-sm text-white">{{ $status['embed']['snippet'] }}</code>
         </section>
+    @elseif (($status['status'] ?? null) === 'connected')
+        <section class="fi-section rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10">
+            <p class="text-sm font-medium text-gray-500 dark:text-gray-400">Website chat</p>
+            <p class="mt-2 text-sm text-gray-700 dark:text-gray-200">Not enabled. Reconnect TROPIKAL Connect, then refresh the status.</p>
+        </section>
     @endif
 
     <section class="fi-section rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-950/5 dark:bg-gray-900 dark:ring-white/10">

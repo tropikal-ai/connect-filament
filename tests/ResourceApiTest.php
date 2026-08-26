@@ -442,6 +442,30 @@ final class ResourceApiTest extends TestCase
             ->assertDontSee('/legacy-connect', false);
     }
 
+    public function test_widget_bootstrap_serves_the_actual_chat_widget(): void
+    {
+        Http::fake([
+            'https://control.example.com/embed/chat-widget.js' => Http::response(
+                'window.tropikalChatLoaded = true;',
+                200,
+                ['Content-Type' => 'application/javascript; charset=utf-8'],
+            ),
+        ]);
+
+        $this->get('/tropikal-connect/embed/widget.js')
+            ->assertOk()
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertSee('window.tropikalChatLoaded = true;', false);
+    }
+
+    public function test_embed_snippet_loads_the_actual_chat_widget(): void
+    {
+        $this->assertSame(
+            '<script async src="/tropikal-connect/embed/chat-widget.js"></script>',
+            Installation::embedSnippet(),
+        );
+    }
+
     public function test_public_chat_info_returns_not_enabled_without_connected_embed(): void
     {
         $this->getJson('/tropikal-connect/api/chat/info')
