@@ -157,7 +157,13 @@ class EmbedController extends Controller
         if (str_contains(strtolower($contentType), 'json')) {
             $payload = json_decode($body, true);
             if (is_array($payload)) {
-                SensitiveData::assertPublicPayload($payload);
+                // The embed protocol intentionally returns an opaque resume
+                // token to the browser so a visitor can continue a session.
+                // Keep the general secret-shaped-key guard for every other
+                // field, while allowing this single documented root key.
+                $guardedPayload = $payload;
+                unset($guardedPayload['resume_token']);
+                SensitiveData::assertPublicPayload($guardedPayload);
             }
         }
 

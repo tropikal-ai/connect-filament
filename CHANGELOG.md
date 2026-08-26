@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.2.2 - 2026-08-26
+
+- Allow the documented opaque `resume_token` in public embed responses so chat messages can be delivered and sessions can resume.
+
 ## 0.2.1 - 2026-08-26
 
 - Fixed the website chat bootstrap so both documented embed URLs load the actual widget.
