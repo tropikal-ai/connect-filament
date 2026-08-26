@@ -572,6 +572,7 @@ final class ResourceApiTest extends TestCase
         Http::fake([
             'https://control.example.com/api/connect-filament/embed/chat' => Http::response([
                 'message' => 'Hello from the workflow.',
+                'resume_token' => 'opaque-browser-resume-token',
             ]),
         ]);
 
@@ -581,7 +582,8 @@ final class ResourceApiTest extends TestCase
         ], [
             'X-Embed-Origin' => 'https://cms.example.com',
         ])->assertOk()
-            ->assertJsonPath('message', 'Hello from the workflow.');
+            ->assertJsonPath('message', 'Hello from the workflow.')
+            ->assertJsonPath('resume_token', 'opaque-browser-resume-token');
 
         Http::assertSent(function (Request $request) use ($installation): bool {
             return $request->url() === 'https://control.example.com/api/connect-filament/embed/chat'
