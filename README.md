@@ -131,6 +131,60 @@ Discovery can be supplemented with explicit resources in `config/connect-filamen
 
 Only declared readable fields are returned. Only declared writable fields are accepted.
 
+### Publish risk and image fields
+
+The same declaration is the component contract used by Website owner chat,
+Telegram, and other MCP clients. A component does not need a channel-specific
+handler. Declare its writable fields, operation risk, and any staged image
+field:
+
+```php
+'resources' => [
+    'news' => [
+        'label' => 'News',
+        'model' => App\Models\News::class,
+        'identifier' => 'id',
+        'operation_risks' => ['create' => 'publish', 'update' => 'publish'],
+        'fields' => [
+            'id' => ['readable' => true, 'writable' => false],
+            'title' => ['readable' => true, 'writable' => true, 'required' => true, 'max' => 255],
+            'content' => ['readable' => true, 'writable' => true, 'required' => true],
+            'img_path' => [
+                'readable' => true,
+                'writable' => true,
+                'required' => true,
+                'type' => 'asset',
+                'asset' => [
+                    'disk' => 'public',
+                    'directory' => 'news',
+                    'mime_types' => ['image/jpeg', 'image/png', 'image/webp'],
+                    'max_bytes' => 5 * 1024 * 1024,
+                ],
+            ],
+        ],
+    ],
+],
+```
+
+An asset field is represented in the capability JSON Schema as a bounded
+`tropikal-asset-ref`. The caller first prepares an upload, sends the bytes to a
+short-lived one-time Website capability, and then supplies the opaque ref in a
+normal create or update action. The Website validates, decodes, re-encodes,
+scopes, and atomically consumes the staged image; binary data never enters an
+MCP JSON-RPC request.
+
+For an owner-chat-enabled installation, require idempotency at the actual
+mutation boundary:
+
+```env
+CONNECT_FILAMENT_REQUIRE_MUTATION_IDEMPOTENCY=true
+CONNECT_FILAMENT_ASSET_TTL_SECONDS=900
+```
+
+Every create, update, delete, and named action then requires
+`X-Tropikal-Idempotency-Key`. Exact retries return the durable receipt and
+never repeat the mutation; reuse for a different request returns `409`.
+
 ## Security Model
 
 - Setup routes require authenticated Filament/admin access.
@@ -143,6 +197,10 @@ Only declared readable fields are returned. Only declared writable fields are ac
 - Resource reads project declared fields only.
 - Resource lists support pagination, text search, and exact filters over safe readable scalar fields only.
 - Resource writes reject unknown or unsafe fields and return structured 400/422 responses for expected input problems.
+- Mutations can require durable Website-side idempotency receipts, so a lost
+  response cannot repeat an already committed operation.
+- Staged image refs are installation/resource/field scoped, expiry bounded,
+  one-time consumable, and decoded plus re-encoded before storage.
 - Delete grants are explicit destructive capabilities and require confirmation.
 - Eloquent discovery excludes secret-shaped fields before grants can be enabled.
 - Write grants do not expose delete.

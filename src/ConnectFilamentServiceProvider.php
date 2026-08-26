@@ -14,7 +14,10 @@ use TropikalAI\ConnectFilament\Observers\SharedResourceObserver;
 use TropikalAI\ConnectFilament\Services\CapabilityGrantManager;
 use TropikalAI\ConnectFilament\Services\ChangeEventDispatcher;
 use TropikalAI\ConnectFilament\Services\EloquentDiscovery;
+use TropikalAI\ConnectFilament\Services\IdempotentMutationExecutor;
+use TropikalAI\ConnectFilament\Services\ImageSanitizer;
 use TropikalAI\ConnectFilament\Services\ResourceRegistry;
+use TropikalAI\ConnectFilament\Services\StagedAssetManager;
 
 class ConnectFilamentServiceProvider extends ServiceProvider
 {
@@ -22,6 +25,9 @@ class ConnectFilamentServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/connect-filament.php', 'connect-filament');
         $this->app->singleton(EloquentDiscovery::class);
+        $this->app->singleton(IdempotentMutationExecutor::class);
+        $this->app->singleton(ImageSanitizer::class);
+        $this->app->singleton(StagedAssetManager::class);
         $this->app->singleton(ChangeEventDispatcher::class);
         $this->app->singleton(ResourceRegistry::class, fn ($app): ResourceRegistry => new ResourceRegistry(
             $app['config']->get('connect-filament.resources', []),

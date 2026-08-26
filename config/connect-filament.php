@@ -58,6 +58,16 @@ return [
         // a non-durable driver (array/null). Point this at redis/memcached/
         // database in production if the default store is not persistent.
         'nonce_cache_store' => env('CONNECT_FILAMENT_NONCE_CACHE_STORE'),
+        // Compatibility defaults to optional. Sites that enable owner-chat
+        // mutations should set this true after their control plane sends
+        // X-Tropikal-Idempotency-Key on every mutation.
+        'require_idempotency_for_mutations' => (bool) env('CONNECT_FILAMENT_REQUIRE_MUTATION_IDEMPOTENCY', false),
+    ],
+
+    'assets' => [
+        'ttl_seconds' => (int) env('CONNECT_FILAMENT_ASSET_TTL_SECONDS', 900),
+        'max_bytes' => (int) env('CONNECT_FILAMENT_ASSET_MAX_BYTES', 5 * 1024 * 1024),
+        'mime_types' => ['image/jpeg', 'image/png', 'image/webp'],
     ],
 
     'embed' => [

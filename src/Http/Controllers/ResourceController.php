@@ -10,10 +10,13 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\AuditLogger;
+use TropikalAI\ConnectFilament\Services\IdempotentMutationExecutor;
 use TropikalAI\ConnectFilament\Services\ResourceRegistry;
+use TropikalAI\ConnectFilament\Services\StagedAssetManager;
 
 class ResourceController extends Controller
 {
@@ -22,6 +25,8 @@ class ResourceController extends Controller
     public function __construct(
         private readonly ResourceRegistry $registry,
         private readonly AuditLogger $audit,
+        private readonly IdempotentMutationExecutor $mutations,
+        private readonly StagedAssetManager $assets,
     ) {}
 
     public function schema(Request $request): JsonResponse
@@ -100,12 +105,39 @@ class ResourceController extends Controller
         $validated = $request->validate($this->registry->validationRules($resource, true));
         $modelClass = $resource['model'];
         try {
-            $record = new $modelClass;
-            foreach ($validated as $field => $value) {
-                $record->setAttribute($field, $value);
-            }
-            $record->save();
-            $this->audit->record($request, $installation, $slug, $record->getKey(), 'create', ['created' => $validated]);
+            return $this->mutations->execute(
+                request: $request,
+                installation: $installation,
+                resourceSlug: $slug,
+                operation: 'create',
+                identifier: $this->registry->identifierFor($resource),
+                mutation: function () use ($installation, $modelClass, $request, $resource, $slug, $validated): JsonResponse {
+                    $resolved = $this->assets->resolveForMutation($installation, $slug, $resource, $validated);
+                    $record = new $modelClass;
+                    foreach ($resolved as $field => $value) {
+                        $record->setAttribute($field, $value);
+                    }
+                    $record->save();
+                    $this->audit->record($request, $installation, $slug, $record->getKey(), 'create', ['created' => $resolved]);
+
+                    return response()->json([
+                        'data' => $this->registry->projectFor(
+                            $installation,
+                            $slug,
+                            $record->fresh() ?? $record,
+                            $resource,
+                        ),
+                    ], 201);
+                },
+                replayPayload: fn ($receipt): array => $this->registry->narrowResponsePayloadFor(
+                    $installation,
+                    $slug,
+                    $resource,
+                    is_array($receipt->response_json) ? $receipt->response_json : [],
+                ),
+            );
+        } catch (ValidationException $exception) {
+            throw $exception;
         } catch (UniqueConstraintViolationException $exception) {
             report($exception);
 
@@ -119,29 +151,54 @@ class ResourceController extends Controller
 
             return $this->resourceMutationError($request, 500);
         }
-
-        return response()->json(['data' => $this->registry->projectFor($installation, $slug, $record->fresh() ?? $record, $resource)], 201);
     }
 
     public function update(Request $request): JsonResponse
     {
         [$installation, $slug, $resource] = $this->resourceContext($request, 'update');
-        $record = $this->findRecord($resource, (string) $request->route('id'));
-        if (! $record) {
-            return response()->json(['error' => 'Record not found'], 404);
-        }
         if ($unknown = $this->registry->unknownWriteFields($slug, $request->all())) {
             return response()->json(['error' => 'Unknown fields', 'unknown_fields' => $unknown], 422);
         }
 
         $validated = $request->validate($this->registry->validationRules($resource, false));
-        $before = collect($record->getAttributes())->only(array_keys($validated))->toArray();
         try {
-            foreach ($validated as $field => $value) {
-                $record->setAttribute($field, $value);
-            }
-            $record->save();
-            $this->audit->record($request, $installation, $slug, $record->getKey(), 'update', ['before' => $before, 'after' => $validated]);
+            return $this->mutations->execute(
+                request: $request,
+                installation: $installation,
+                resourceSlug: $slug,
+                operation: 'update',
+                identifier: $this->registry->identifierFor($resource),
+                mutation: function () use ($installation, $request, $resource, $slug, $validated): JsonResponse {
+                    $record = $this->findRecord($resource, (string) $request->route('id'));
+                    if (! $record) {
+                        return response()->json(['error' => 'Record not found'], 404);
+                    }
+                    $resolved = $this->assets->resolveForMutation($installation, $slug, $resource, $validated);
+                    $before = collect($record->getAttributes())->only(array_keys($resolved))->toArray();
+                    foreach ($resolved as $field => $value) {
+                        $record->setAttribute($field, $value);
+                    }
+                    $record->save();
+                    $this->audit->record($request, $installation, $slug, $record->getKey(), 'update', ['before' => $before, 'after' => $resolved]);
+
+                    return response()->json([
+                        'data' => $this->registry->projectFor(
+                            $installation,
+                            $slug,
+                            $record->fresh() ?? $record,
+                            $resource,
+                        ),
+                    ]);
+                },
+                replayPayload: fn ($receipt): array => $this->registry->narrowResponsePayloadFor(
+                    $installation,
+                    $slug,
+                    $resource,
+                    is_array($receipt->response_json) ? $receipt->response_json : [],
+                ),
+            );
+        } catch (ValidationException $exception) {
+            throw $exception;
         } catch (UniqueConstraintViolationException $exception) {
             report($exception);
 
@@ -155,23 +212,37 @@ class ResourceController extends Controller
 
             return $this->resourceMutationError($request, 500);
         }
-
-        return response()->json(['data' => $this->registry->projectFor($installation, $slug, $record->fresh() ?? $record, $resource)]);
     }
 
     public function destroy(Request $request): JsonResponse
     {
         [$installation, $slug, $resource] = $this->resourceContext($request, 'delete');
-        $record = $this->findRecord($resource, (string) $request->route('id'));
-        if (! $record) {
-            return response()->json(['error' => 'Record not found'], 404);
-        }
-
-        $identifier = (string) $record->getAttribute($this->registry->identifierFor($resource));
-        $before = $this->registry->project($record, $resource);
         try {
-            $record->delete();
-            $this->audit->record($request, $installation, $slug, $identifier, 'delete', ['before' => $before]);
+            return $this->mutations->execute(
+                request: $request,
+                installation: $installation,
+                resourceSlug: $slug,
+                operation: 'delete',
+                identifier: $this->registry->identifierFor($resource),
+                mutation: function () use ($installation, $request, $resource, $slug): JsonResponse {
+                    $record = $this->findRecord($resource, (string) $request->route('id'));
+                    if (! $record) {
+                        return response()->json(['error' => 'Record not found'], 404);
+                    }
+                    $identifier = (string) $record->getAttribute($this->registry->identifierFor($resource));
+                    $before = $this->registry->project($record, $resource);
+                    $record->delete();
+                    $this->audit->record($request, $installation, $slug, $identifier, 'delete', ['before' => $before]);
+
+                    return response()->json(['data' => ['id' => $identifier, 'deleted' => true]]);
+                },
+                replayPayload: fn ($receipt): array => $this->registry->narrowResponsePayloadFor(
+                    $installation,
+                    $slug,
+                    $resource,
+                    is_array($receipt->response_json) ? $receipt->response_json : [],
+                ),
+            );
         } catch (QueryException $exception) {
             report($exception);
 
@@ -181,8 +252,6 @@ class ResourceController extends Controller
 
             return $this->resourceMutationError($request, 500);
         }
-
-        return response()->json(['data' => ['id' => $identifier, 'deleted' => true]]);
     }
 
     public function action(Request $request): JsonResponse
@@ -194,28 +263,46 @@ class ResourceController extends Controller
             return response()->json(['error' => 'Action not found'], 404);
         }
 
-        $record = $this->findRecord($resource, (string) $request->route('id'));
-        if (! $record) {
-            return response()->json(['error' => 'Record not found'], 404);
-        }
-
         $method = $actions[$action]['method'] ?? null;
-        if (! is_string($method) || ! method_exists($record, $method)) {
+        if (! is_string($method)) {
             return response()->json(['error' => 'Action method not found'], 500);
         }
 
-        $before = $this->registry->project($record, $resource);
-        $record->{$method}();
-        $record = $record->fresh();
-        // The audit log is the site's own record of what changed, so it keeps
-        // the full before/after. Only the response is narrowed to the fields
-        // this installation may receive.
-        $after = $record ? $this->registry->project($record, $resource) : [];
-        $this->audit->record($request, $installation, $slug, $record?->getKey(), "action:{$action}", ['before' => $before, 'after' => $after]);
+        return $this->mutations->execute(
+            request: $request,
+            installation: $installation,
+            resourceSlug: $slug,
+            operation: "action:{$action}",
+            identifier: $this->registry->identifierFor($resource),
+            mutation: function () use ($action, $installation, $method, $request, $resource, $slug): JsonResponse {
+                $record = $this->findRecord($resource, (string) $request->route('id'));
+                if (! $record) {
+                    return response()->json(['error' => 'Record not found'], 404);
+                }
+                if (! method_exists($record, $method)) {
+                    return response()->json(['error' => 'Action method not found'], 500);
+                }
 
-        return response()->json([
-            'data' => $record ? $this->registry->projectFor($installation, $slug, $record, $resource) : [],
-        ]);
+                $before = $this->registry->project($record, $resource);
+                $record->{$method}();
+                $record = $record->fresh();
+                // The audit log is the site's own record of what changed, so it keeps
+                // the full before/after. Only the response is narrowed to the fields
+                // this installation may receive.
+                $after = $record ? $this->registry->project($record, $resource) : [];
+                $this->audit->record($request, $installation, $slug, $record?->getKey(), "action:{$action}", ['before' => $before, 'after' => $after]);
+
+                return response()->json([
+                    'data' => $record ? $this->registry->projectFor($installation, $slug, $record, $resource) : [],
+                ]);
+            },
+            replayPayload: fn ($receipt): array => $this->registry->narrowResponsePayloadFor(
+                $installation,
+                $slug,
+                $resource,
+                is_array($receipt->response_json) ? $receipt->response_json : [],
+            ),
+        );
     }
 
     private function installation(Request $request): Installation
