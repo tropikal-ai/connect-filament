@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-08-26
+
+- Added Filament 5 support and aligned the Laravel and Testbench dependency ranges with Filament 5.
+
+## 0.1.0 - 2026-05-16
+
 - Prepared the Filament integration package for open-source release-candidate review.
 - Documented install, local path development, plugin registration, OAuth setup, business-object discovery, security model, and private server boundaries.
 - Aligned dependency metadata with the first `tropikal-ai/connect` minor release line.

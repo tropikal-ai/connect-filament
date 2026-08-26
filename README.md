@@ -7,11 +7,9 @@ Laravel + Filament integration for TROPIKAL Connect.
 ## Requirements
 
 - PHP 8.2 or newer
-- Laravel 11 or 12
-- Filament 3
+- Laravel 11.28, 12, or 13
+- Filament 5
 - Composer 2
-
-Filament 4 or newer is not claimed by this package.
 
 ## Install
 
@@ -42,13 +40,13 @@ For clone-based development inside an app, add both local packages as path repos
             "options": {
                 "symlink": true,
                 "versions": {
-                    "tropikal-ai/connect-filament": "0.1.0"
+                    "tropikal-ai/connect-filament": "0.2.0"
                 }
             }
         }
     ],
     "require": {
-        "tropikal-ai/connect-filament": "^0.1"
+        "tropikal-ai/connect-filament": "^0.2"
     },
     "minimum-stability": "dev",
     "prefer-stable": true

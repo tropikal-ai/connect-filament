@@ -17,7 +17,7 @@ class Dashboard extends Page
 {
     protected static string $resource = InstallationResource::class;
 
-    protected static string $view = 'connect-filament::filament.resources.installation-resource.pages.dashboard';
+    protected string $view = 'connect-filament::filament.resources.installation-resource.pages.dashboard';
 
     public ?Installation $installation = null;
 
