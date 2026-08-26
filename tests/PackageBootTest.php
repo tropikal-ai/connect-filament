@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace TropikalAI\ConnectFilament\Tests;
 
+use Filament\Panel;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\View;
 use TropikalAI\ConnectFilament\ConnectFilamentPlugin;
+use TropikalAI\ConnectFilament\Filament\Resources\InstallationResource;
 
 final class PackageBootTest extends TestCase
 {
@@ -24,7 +26,13 @@ final class PackageBootTest extends TestCase
 
     public function test_filament_plugin_is_named_and_registerable(): void
     {
-        $this->assertSame('tropikal-connect-filament', ConnectFilamentPlugin::make()->getId());
+        $plugin = ConnectFilamentPlugin::make();
+        $panel = Panel::make()->id('test')->path('admin');
+
+        $plugin->register($panel);
+
+        $this->assertSame('tropikal-connect-filament', $plugin->getId());
+        $this->assertContains(InstallationResource::class, $panel->getResources());
         $this->assertSame('TROPIKAL Connect', config('connect-filament.filament.label'));
     }
 }
