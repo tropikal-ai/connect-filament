@@ -11,6 +11,7 @@ use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
 use TropikalAI\ConnectFilament\Models\AuditLog;
 use TropikalAI\ConnectFilament\Models\Installation;
+use TropikalAI\ConnectFilament\Models\OperationReceipt;
 use TropikalAI\ConnectFilament\Services\EloquentDiscovery;
 use TropikalAI\ConnectFilament\Services\ResourceRegistry;
 use TropikalAI\ConnectFilament\Tests\Fixtures\Article;
@@ -18,6 +19,142 @@ use TropikalAI\ConnectFilament\Tests\Fixtures\Post;
 
 final class ResourceApiTest extends TestCase
 {
+    public function test_mutation_idempotency_replays_the_committed_receipt_without_a_second_create(): void
+    {
+        config()->set('connect-filament.api.require_idempotency_for_mutations', true);
+        $this->configurePostResource();
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['posts'],
+            'resource_permissions' => ['posts' => ['create']],
+        ]);
+        $path = "/api/tropikal-connect/installations/{$installation->public_id}/resources/posts";
+        $payload = ['title' => 'One post', 'body' => 'One body'];
+        $body = json_encode($payload, JSON_THROW_ON_ERROR);
+        $idempotencyKey = 'review:4b58a355-6d11-4a29-96f6-06333ca6f222:attempt:1';
+
+        $first = $this->withHeaders([
+            ...$this->sign($installation, 'POST', $path, null, $body, 'create_once_1'),
+            'X-Tropikal-Idempotency-Key' => $idempotencyKey,
+        ])->json('POST', $path, $payload)->assertCreated();
+
+        $second = $this->withHeaders([
+            ...$this->sign($installation, 'POST', $path, null, $body, 'create_once_2'),
+            'X-Tropikal-Idempotency-Key' => $idempotencyKey,
+        ])->json('POST', $path, $payload)->assertCreated();
+
+        $this->assertSame(1, Post::query()->count());
+        $this->assertSame(1, AuditLog::query()->where('action', 'create')->count());
+        $this->assertSame(1, OperationReceipt::query()->count());
+        $this->assertSame(
+            $first->json('operation_receipt.id'),
+            $second->json('operation_receipt.id'),
+        );
+        $this->assertFalse($first->json('operation_receipt.replayed'));
+        $this->assertTrue($second->json('operation_receipt.replayed'));
+    }
+
+    public function test_reusing_an_idempotency_key_for_different_semantics_is_rejected(): void
+    {
+        config()->set('connect-filament.api.require_idempotency_for_mutations', true);
+        $this->configurePostResource();
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['posts'],
+            'resource_permissions' => ['posts' => ['create']],
+        ]);
+        $path = "/api/tropikal-connect/installations/{$installation->public_id}/resources/posts";
+        $idempotencyKey = 'review:cc66b86b-5581-48ef-a223-55cf7f6074d8:attempt:1';
+        $firstPayload = ['title' => 'Reviewed post', 'body' => 'Reviewed body'];
+        $secondPayload = ['title' => 'Changed post', 'body' => 'Changed body'];
+
+        $this->withHeaders([
+            ...$this->sign(
+                $installation,
+                'POST',
+                $path,
+                null,
+                json_encode($firstPayload, JSON_THROW_ON_ERROR),
+                'idempotency_hash_1',
+            ),
+            'X-Tropikal-Idempotency-Key' => $idempotencyKey,
+        ])->json('POST', $path, $firstPayload)->assertCreated();
+
+        $this->withHeaders([
+            ...$this->sign(
+                $installation,
+                'POST',
+                $path,
+                null,
+                json_encode($secondPayload, JSON_THROW_ON_ERROR),
+                'idempotency_hash_2',
+            ),
+            'X-Tropikal-Idempotency-Key' => $idempotencyKey,
+        ])->json('POST', $path, $secondPayload)
+            ->assertStatus(409)
+            ->assertJson(['error' => 'idempotency_conflict']);
+
+        $this->assertSame(1, Post::query()->count());
+        $this->assertSame('Reviewed post', Post::query()->firstOrFail()->title);
+        $this->assertSame(1, AuditLog::query()->where('action', 'create')->count());
+        $this->assertSame(1, OperationReceipt::query()->count());
+    }
+
+    public function test_receipt_replay_reapplies_current_field_grants(): void
+    {
+        config()->set('connect-filament.api.require_idempotency_for_mutations', true);
+        $this->configurePostResource();
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['posts'],
+            'resource_permissions' => ['posts' => ['create']],
+        ]);
+        $path = "/api/tropikal-connect/installations/{$installation->public_id}/resources/posts";
+        $payload = ['title' => 'Visible title', 'body' => 'Later revoked'];
+        $body = json_encode($payload, JSON_THROW_ON_ERROR);
+        $idempotencyKey = 'review:6fea7f88-45e2-44d4-a584-33595fb789bc:attempt:1';
+
+        $this->withHeaders([
+            ...$this->sign($installation, 'POST', $path, null, $body, 'permission_replay_1'),
+            'X-Tropikal-Idempotency-Key' => $idempotencyKey,
+        ])->json('POST', $path, $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.body', 'Later revoked');
+
+        $installation->forceFill([
+            'resource_permissions' => ['posts' => ['create', 'field:title']],
+        ])->save();
+
+        $replay = $this->withHeaders([
+            ...$this->sign($installation->fresh(), 'POST', $path, null, $body, 'permission_replay_2'),
+            'X-Tropikal-Idempotency-Key' => $idempotencyKey,
+        ])->json('POST', $path, $payload)->assertCreated();
+
+        $replay->assertJsonPath('data.title', 'Visible title');
+        $replay->assertJsonMissingPath('data.body');
+        $this->assertTrue($replay->json('operation_receipt.replayed'));
+        $this->assertSame(1, Post::query()->count());
+    }
+
+    public function test_required_mutation_idempotency_fails_closed_when_the_key_is_missing(): void
+    {
+        config()->set('connect-filament.api.require_idempotency_for_mutations', true);
+        $this->configurePostResource();
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['posts'],
+            'resource_permissions' => ['posts' => ['create']],
+        ]);
+        $path = "/api/tropikal-connect/installations/{$installation->public_id}/resources/posts";
+
+        $this->signedJson($installation, 'POST', $path, [
+            'title' => 'Unsafe retry',
+            'body' => 'Must not be created',
+        ], 'missing_idempotency')
+            ->assertStatus(428)
+            ->assertJson(['error' => 'idempotency_key_required']);
+
+        $this->assertSame(0, Post::query()->count());
+        $this->assertSame(0, AuditLog::query()->count());
+        $this->assertSame(0, OperationReceipt::query()->count());
+    }
+
     public function test_empty_resource_allow_list_exposes_nothing(): void
     {
         $this->configurePostResource();

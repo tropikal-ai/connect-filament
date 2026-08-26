@@ -130,6 +130,40 @@ class ResourceRegistry
         return $payload;
     }
 
+    /**
+     * Re-apply today's field grants to a response stored in a durable receipt.
+     * A retry proves the same operation happened; it must not resurrect fields
+     * whose read permission was removed after the original response.
+     */
+    public function narrowResponsePayloadFor(
+        Installation $installation,
+        string $slug,
+        array $resource,
+        array $payload,
+    ): array {
+        $data = $payload['data'] ?? null;
+        if (! is_array($data)) {
+            return $payload;
+        }
+
+        $allowed = $this->readableFields($resource);
+        $selected = FieldSelection::fromPermissions($installation->resource_permissions ?? [], $slug);
+        if ($selected !== null) {
+            $allowed = array_values(array_intersect($allowed, [
+                $this->identifierFor($resource),
+                ...$selected,
+            ]));
+        }
+
+        $narrowed = array_intersect_key($data, array_flip($allowed));
+        if (($data['deleted'] ?? false) === true) {
+            $narrowed['deleted'] = true;
+        }
+        $payload['data'] = $narrowed;
+
+        return $payload;
+    }
+
     public function validationRules(array $resource, bool $creating): array
     {
         $rules = [];
@@ -150,6 +184,7 @@ class ResourceRegistry
                 'boolean' => $fieldRules[] = 'boolean',
                 'json' => $fieldRules[] = 'array',
                 'datetime' => $fieldRules[] = 'date',
+                'asset' => $fieldRules[] = 'regex:/^cfa_[A-Za-z0-9]+$/',
                 default => $fieldRules[] = 'string',
             };
 
@@ -263,7 +298,7 @@ class ResourceRegistry
             $operations[] = new OperationDescriptor(
                 name: "{$slug}.create",
                 operation: 'create',
-                riskLevel: 'write',
+                riskLevel: $this->operationRisk($resource, 'create', 'write'),
                 inputSchema: $this->writeInputSchema($resource, true),
                 outputSchema: ['type' => 'object'],
                 requiresConfirmation: true,
@@ -272,7 +307,7 @@ class ResourceRegistry
             $operations[] = new OperationDescriptor(
                 name: "{$slug}.update",
                 operation: 'update',
-                riskLevel: 'write',
+                riskLevel: $this->operationRisk($resource, 'update', 'write'),
                 inputSchema: [
                     ...$updateInputSchema,
                     'required' => ['id'],
@@ -396,6 +431,15 @@ class ResourceRegistry
             'datetime' => ['type' => 'string', 'format' => 'date-time'],
             'email' => ['type' => 'string', 'format' => 'email'],
             'url' => ['type' => 'string', 'format' => 'uri'],
+            'asset' => [
+                'type' => 'string',
+                'format' => 'tropikal-asset-ref',
+                'description' => 'A staged Website asset_ref obtained from website_owner_chat.asset_prepare.',
+                'x-tropikal-asset' => [
+                    'mimeTypes' => array_values((array) ($definition['asset']['mime_types'] ?? [])),
+                    'maxBytes' => (int) ($definition['asset']['max_bytes'] ?? config('connect-filament.assets.max_bytes')),
+                ],
+            ],
             default => ['type' => 'string'],
         };
 
@@ -409,6 +453,26 @@ class ResourceRegistry
             $schema['minLength'] = (int) $definition['min'];
         }
 
+        $label = trim((string) ($definition['label'] ?? ''));
+        if ($label !== '') {
+            $schema['title'] = mb_substr($label, 0, 80);
+        }
+
+        $description = trim((string) ($definition['description'] ?? ''));
+        if ($description !== '') {
+            $schema['description'] = mb_substr($description, 0, 500);
+        }
+
         return $schema;
+    }
+
+    private function operationRisk(array $resource, string $operation, string $default): string
+    {
+        $risks = is_array($resource['operation_risks'] ?? null) ? $resource['operation_risks'] : [];
+        $risk = $risks[$operation] ?? $default;
+
+        return is_string($risk) && in_array($risk, ['read', 'write', 'publish', 'destructive'], true)
+            ? $risk
+            : $default;
     }
 }

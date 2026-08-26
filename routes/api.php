@@ -3,7 +3,12 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
+use TropikalAI\ConnectFilament\Http\Controllers\AssetController;
 use TropikalAI\ConnectFilament\Http\Controllers\ResourceController;
+
+Route::put('/assets/{assetRef}/content', [AssetController::class, 'upload'])
+    ->where(['assetRef' => 'cfa_[A-Za-z0-9]+'])
+    ->name('connect-filament.api.assets.upload');
 
 Route::prefix('/installations/{installationId}')
     ->where(['installationId' => 'cfi_[A-Za-z0-9]+'])
@@ -14,6 +19,9 @@ Route::prefix('/installations/{installationId}')
 
         Route::get('/control-plane-resources', [ResourceController::class, 'controlPlaneResources'])
             ->name('connect-filament.api.control-plane-resources');
+
+        Route::post('/assets/prepare', [AssetController::class, 'prepare'])
+            ->name('connect-filament.api.assets.prepare');
 
         Route::get('/resources/{resource}', [ResourceController::class, 'index'])
             ->name('connect-filament.api.resources.index');
