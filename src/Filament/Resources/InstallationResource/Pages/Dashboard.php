@@ -7,6 +7,7 @@ namespace TropikalAI\ConnectFilament\Filament\Resources\InstallationResource\Pag
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
+use Throwable;
 use TropikalAI\ConnectFilament\Filament\Resources\InstallationResource;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\CapabilityGrantManager;
@@ -37,9 +38,22 @@ class Dashboard extends Page
             return;
         }
 
-        app(ControlPlaneClient::class)->syncCapabilities($this->installation);
-        app(ControlPlaneClient::class)->syncEmbedStatus($this->installation->refresh());
-        $this->mount();
+        try {
+            app(ControlPlaneClient::class)->syncCapabilities($this->installation);
+            app(ControlPlaneClient::class)->syncEmbedStatus($this->installation->refresh());
+            $this->mount();
+        } catch (Throwable $exception) {
+            report($exception);
+
+            Notification::make()
+                ->title('Reconnect required')
+                ->body('The connection credentials have expired. Reconnect TROPIKAL Connect, then refresh the status again.')
+                ->danger()
+                ->persistent()
+                ->send();
+
+            return;
+        }
 
         Notification::make()
             ->title('Status updated')
@@ -107,6 +121,10 @@ class Dashboard extends Page
             Action::make('sync')
                 ->label('Refresh status')
                 ->action('sync')
+                ->visible(fn (): bool => (bool) $this->installation?->isConnected()),
+            Action::make('reconnect')
+                ->label('Reconnect')
+                ->url(route('connect-filament.oauth.connect'))
                 ->visible(fn (): bool => (bool) $this->installation?->isConnected()),
             Action::make('website')
                 ->label('Website detail')

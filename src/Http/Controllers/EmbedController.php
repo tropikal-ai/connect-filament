@@ -29,14 +29,7 @@ class EmbedController extends Controller
 
     public function widget(): Response
     {
-        $prefix = trim((string) config('connect-filament.embed.prefix', 'tropikal-connect'), '/');
-        $script = "(() => { fetch('/{$prefix}/embed/info', { credentials: 'same-origin' }); })();";
-
-        return response($script, 200, [
-            'Content-Type' => 'application/javascript; charset=utf-8',
-            'Cache-Control' => 'public, max-age='.(int) config('connect-filament.embed.asset_cache_seconds', 300),
-            'X-Content-Type-Options' => 'nosniff',
-        ]);
+        return $this->asset('chat-widget.js');
     }
 
     public function asset(string $asset): Response
