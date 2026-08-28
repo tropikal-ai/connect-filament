@@ -17,11 +17,25 @@ class OAuthClient
 {
     public function beginAuthorization(Installation $installation): string
     {
+        $configuredClientId = trim((string) config('connect-filament.oauth.client_id', ''));
+        if ($configuredClientId === ''
+            && $installation->status === Installation::STATUS_NOT_CONNECTED
+            && filled($installation->oauth_client_id)) {
+            // v0.1.3 and older retained a dynamic id after disconnect. Its
+            // authorization-server record may already be gone, so repair only
+            // that legacy terminal state. Pending and connected attempts keep
+            // their client/token pairing.
+            $installation->forceFill(['oauth_client_id' => null])->save();
+        }
+
         $clientId = $this->clientId($installation);
         $state = OAuthState::generate();
         $pkce = PkcePair::generate();
 
         $installation->forceFill([
+            'status' => $installation->isConnected()
+                ? Installation::STATUS_CONNECTED
+                : Installation::STATUS_PENDING_REGISTRATION,
             'oauth_client_id' => $clientId,
             'oauth_state_hash' => $state->hash,
             'oauth_code_verifier_encrypted' => $pkce->verifier,
