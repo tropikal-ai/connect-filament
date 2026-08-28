@@ -23,6 +23,7 @@ final class OAuthSetupTest extends TestCase
         config()->set('connect-filament.site.url', 'https://example.com');
         config()->set('connect-filament.oauth.redirect_base_url', 'https://cms.example.com');
         Http::fake([
+            'https://auth.example.com/oauth/register/challenge' => Http::response([], 404),
             'https://auth.example.com/oauth/register' => Http::response(['client_id' => 'client_123']),
         ]);
 
@@ -47,6 +48,122 @@ final class OAuthSetupTest extends TestCase
             && $request['redirect_uris'] === ['https://cms.example.com/tropikal-connect/oauth/callback']);
     }
 
+    public function test_connect_after_disconnect_registers_a_fresh_dynamic_client(): void
+    {
+        config()->set('connect-filament.site.url', 'https://customer.example');
+        config()->set('connect-filament.oauth.redirect_base_url', 'https://customer.example');
+        $installation = Installation::query()->create([
+            'status' => Installation::STATUS_CONNECTED,
+            'site_url' => 'https://customer.example',
+            'control_plane_url' => 'https://control.example.com',
+            'oauth_client_id' => 'deleted_client',
+            'oauth_refresh_token_encrypted' => 'old-refresh-token',
+        ]);
+        $installation->markDisconnected();
+        Http::fake([
+            'https://auth.example.com/oauth/register/challenge' => Http::response([], 404),
+            'https://auth.example.com/oauth/register' => Http::response(['client_id' => 'fresh_client']),
+        ]);
+
+        $response = $this->actingAs($this->createUser())
+            ->get(route('connect-filament.oauth.connect'));
+
+        $response->assertRedirect();
+        $this->assertStringContainsString('client_id=fresh_client', (string) $response->headers->get('Location'));
+        $this->assertSame('fresh_client', Installation::query()->firstOrFail()->oauth_client_id);
+    }
+
+    public function test_connect_solves_registration_proof_for_an_unknown_origin(): void
+    {
+        config()->set('connect-filament.site.url', 'https://new-customer.example');
+        config()->set('connect-filament.oauth.redirect_base_url', 'https://new-customer.example');
+        Http::fake([
+            'https://auth.example.com/oauth/register/challenge' => Http::response([
+                'challenge_id' => 'filament-registration',
+                'prefix' => '0',
+            ]),
+            'https://auth.example.com/oauth/register' => Http::response(['client_id' => 'fresh_client']),
+        ]);
+
+        $this->actingAs($this->createUser())
+            ->get(route('connect-filament.oauth.connect'))
+            ->assertRedirect();
+
+        Http::assertSent(function (Request $request): bool {
+            if ($request->url() !== 'https://auth.example.com/oauth/register') {
+                return false;
+            }
+
+            return $request['pow_challenge_id'] === 'filament-registration'
+                && str_starts_with(hash('sha256', 'filament-registration:'.$request['pow_nonce']), '0');
+        });
+    }
+
+    public function test_connect_keeps_an_owner_configured_static_client(): void
+    {
+        config()->set('connect-filament.oauth.client_id', 'configured_client');
+        Http::preventStrayRequests();
+
+        $response = $this->actingAs($this->createUser())
+            ->get(route('connect-filament.oauth.connect'));
+
+        $response->assertRedirect();
+        $this->assertStringContainsString('client_id=configured_client', (string) $response->headers->get('Location'));
+        $this->assertSame('configured_client', Installation::query()->firstOrFail()->oauth_client_id);
+    }
+
+    public function test_abandoned_connect_attempt_keeps_the_active_client_and_refresh_token(): void
+    {
+        Installation::query()->create([
+            'status' => Installation::STATUS_CONNECTED,
+            'site_url' => 'https://example.com',
+            'control_plane_url' => 'https://control.example.com',
+            'oauth_client_id' => 'active_client',
+            'oauth_refresh_token_encrypted' => 'active-refresh-token',
+        ]);
+        Http::preventStrayRequests();
+
+        $response = $this->actingAs($this->createUser())
+            ->get(route('connect-filament.oauth.connect'));
+
+        $response->assertRedirect();
+        $installation = Installation::query()->firstOrFail();
+        $this->assertSame('active_client', $installation->oauth_client_id);
+        $this->assertSame('active-refresh-token', $installation->oauth_refresh_token_encrypted);
+    }
+
+    public function test_connect_does_not_fallback_when_the_challenge_service_is_unavailable(): void
+    {
+        Http::fake([
+            'https://auth.example.com/oauth/register/challenge' => Http::response([], 503),
+        ]);
+
+        try {
+            $this->withoutExceptionHandling()
+                ->actingAs($this->createUser())
+                ->get(route('connect-filament.oauth.connect'));
+            $this->fail('Expected registration challenge failure.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('challenge failed with HTTP 503', $exception->getMessage());
+        }
+
+        Http::assertNotSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://auth.example.com/oauth/register');
+    }
+
+    public function test_disconnect_forgets_the_dynamic_client_id(): void
+    {
+        $installation = Installation::query()->create([
+            'site_url' => 'https://customer.example',
+            'control_plane_url' => 'https://control.example.com',
+            'oauth_client_id' => 'deleted_client',
+        ]);
+
+        $installation->markDisconnected();
+
+        $this->assertNull($installation->fresh()?->oauth_client_id);
+    }
+
     public function test_oauth_setup_rejects_insecure_nonlocal_endpoints(): void
     {
         $this->withoutExceptionHandling();
@@ -65,6 +182,7 @@ final class OAuthSetupTest extends TestCase
         config()->set('connect-filament.control_plane.base_url', 'http://localhost:9001');
 
         Http::fake([
+            'http://localhost:9000/oauth/register/challenge' => Http::response([], 404),
             'http://localhost:9000/oauth/register' => Http::response(['client_id' => 'client_local']),
         ]);
 

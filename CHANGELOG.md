@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.4 - 2026-08-28
+
+- Recover reconnects by discarding disconnected dynamic OAuth client ids.
+- Support dynamic registration from new HTTPS origins with the authorization server's registration proof.
+
+## 0.1.0 - 2026-05-16
 - Prepared the Filament integration package for open-source release-candidate review.
 - Documented install, local path development, plugin registration, OAuth setup, business-object discovery, security model, and private server boundaries.
 - Aligned dependency metadata with the first `tropikal-ai/connect` minor release line.

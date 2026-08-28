@@ -176,6 +176,7 @@ class Installation extends Model
             'account_id' => null,
             'account_email' => null,
             'workspace_id' => null,
+            'oauth_client_id' => null,
             'oauth_refresh_token_encrypted' => null,
             'oauth_state_hash' => null,
             'oauth_code_verifier_encrypted' => null,
