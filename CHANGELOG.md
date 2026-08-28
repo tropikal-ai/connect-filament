@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.2.4 - 2026-08-28
+
+- Recover reconnects by discarding disconnected dynamic OAuth client ids.
+- Support dynamic registration from new HTTPS origins with the authorization server's registration proof.
+
 ## 0.2.2 - 2026-08-26
 
 - Allow the documented opaque `resume_token` in public embed responses so chat messages can be delivered and sessions can resume.

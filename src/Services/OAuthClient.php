@@ -157,17 +157,32 @@ class OAuthClient
     private function registerClient(Installation $installation): string
     {
         $siteUrl = $this->siteUrl();
+        $payload = (new ClientRegistrationRequest(
+            $this->clientName($siteUrl),
+            [$this->redirectUri()],
+            $this->scopes(),
+            $this->resource(),
+            $siteUrl,
+            trim((string) config('connect-filament.oauth.software_id', '')),
+        ))->toArray();
+
+        $challenge = Http::acceptJson()
+            ->timeout($this->timeout())
+            ->get($this->authorizationServerUrl().$this->path('oauth.register_path').'/challenge');
+        if ($challenge->successful()) {
+            $challengePayload = $challenge->json();
+            if (! is_array($challengePayload)) {
+                throw new \RuntimeException('The authorization server returned an invalid registration challenge.');
+            }
+            $payload = [...$payload, ...RegistrationProof::solve($challengePayload)];
+        } elseif (! in_array($challenge->status(), [404, 405], true)) {
+            throw new \RuntimeException("OAuth client registration challenge failed with HTTP {$challenge->status()}.");
+        }
+
         $response = Http::acceptJson()
             ->asJson()
             ->timeout($this->timeout())
-            ->post($this->authorizationServerUrl().$this->path('oauth.register_path'), (new ClientRegistrationRequest(
-                $this->clientName($siteUrl),
-                [$this->redirectUri()],
-                $this->scopes(),
-                $this->resource(),
-                $siteUrl,
-                trim((string) config('connect-filament.oauth.software_id', '')),
-            ))->toArray());
+            ->post($this->authorizationServerUrl().$this->path('oauth.register_path'), $payload);
 
         if (! $response->successful()) {
             throw new \RuntimeException('The authorization server rejected OAuth client registration.');
