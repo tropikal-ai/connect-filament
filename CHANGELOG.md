@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.2.5 - 2026-08-28
+
+- Self-heal dynamic OAuth client ids retained by installations disconnected before v0.2.4.
+
 ## 0.2.4 - 2026-08-28
 
 - Recover reconnects by discarding disconnected dynamic OAuth client ids.

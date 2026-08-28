@@ -48,18 +48,17 @@ final class OAuthSetupTest extends TestCase
             && $request['redirect_uris'] === ['https://cms.example.com/tropikal-connect/oauth/callback']);
     }
 
-    public function test_connect_after_disconnect_registers_a_fresh_dynamic_client(): void
+    public function test_connect_self_heals_a_legacy_disconnected_dynamic_client(): void
     {
         config()->set('connect-filament.site.url', 'https://customer.example');
         config()->set('connect-filament.oauth.redirect_base_url', 'https://customer.example');
-        $installation = Installation::query()->create([
-            'status' => Installation::STATUS_CONNECTED,
+        Installation::query()->create([
+            'status' => Installation::STATUS_NOT_CONNECTED,
             'site_url' => 'https://customer.example',
             'control_plane_url' => 'https://control.example.com',
             'oauth_client_id' => 'deleted_client',
-            'oauth_refresh_token_encrypted' => 'old-refresh-token',
+            'oauth_state_hash' => 'state-from-failed-legacy-attempt',
         ]);
-        $installation->markDisconnected();
         Http::fake([
             'https://auth.example.com/oauth/register/challenge' => Http::response([], 404),
             'https://auth.example.com/oauth/register' => Http::response(['client_id' => 'fresh_client']),
@@ -71,6 +70,24 @@ final class OAuthSetupTest extends TestCase
         $response->assertRedirect();
         $this->assertStringContainsString('client_id=fresh_client', (string) $response->headers->get('Location'));
         $this->assertSame('fresh_client', Installation::query()->firstOrFail()->oauth_client_id);
+    }
+
+    public function test_repeated_pending_connect_attempt_reuses_its_dynamic_client(): void
+    {
+        Installation::query()->create([
+            'status' => Installation::STATUS_PENDING_REGISTRATION,
+            'site_url' => 'https://example.com',
+            'control_plane_url' => 'https://control.example.com',
+            'oauth_client_id' => 'pending_client',
+        ]);
+        Http::preventStrayRequests();
+
+        $response = $this->actingAs($this->createUser())
+            ->get(route('connect-filament.oauth.connect'));
+
+        $response->assertRedirect();
+        $this->assertStringContainsString('client_id=pending_client', (string) $response->headers->get('Location'));
+        $this->assertSame('pending_client', Installation::query()->firstOrFail()->oauth_client_id);
     }
 
     public function test_connect_solves_registration_proof_for_an_unknown_origin(): void
