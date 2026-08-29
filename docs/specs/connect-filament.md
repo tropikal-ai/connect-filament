@@ -48,8 +48,23 @@ Browser-facing embed proxy endpoints are public, tokenless same-origin
 endpoints. They must run through Laravel's `api` middleware, not the `web`
 session stack, because visitor chat is authenticated by a server-to-server
 signed request to the control plane rather than by a Laravel session or CSRF
-token.
+token. The public surface is chat info/send/session, anonymous history
+list/read/delete/clear, and action confirm/cancel. History requests add a
+package-owned 256-bit first-party HttpOnly cookie value only to the signed JSON
+body sent upstream; the browser never sees that raw identifier. History
+deletion also requires an explicit intent header and an exact same-origin
+`Origin` value.
+
+The stable `embed/chat-widget.js` and `embed/iframe.html` proxy paths always
+revalidate and preserve provider validators. Only strict fingerprinted
+`embed/assets/<name>-<hash>.js|css` paths are immutable. The proxy forwards no
+browser cookies, authorization, or signing headers upstream and returns only
+safe cache, validator, MIME, and iframe-CSP response headers downstream.
 
 ## Test Plan
 
-Orchestra Testbench covers package boot, Filament registration, OAuth setup, encrypted persistence, resource access rules, audit logging, public payload safety, sessionless public embed chat proxying, signed request rejection cases, and SQLite in-memory execution.
+Orchestra Testbench covers package boot, Filament registration, OAuth setup,
+encrypted persistence, resource access rules, audit logging, public payload
+safety, the complete sessionless public chat/history surface, cookie rotation,
+same-origin mutation intent, strict asset proxying, signed request rejection
+cases, and SQLite in-memory execution.

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Complete the public Website Chat adapter with signed session, anonymous history, and action-decision routes.
+- Bind anonymous history to a rotating 256-bit first-party HttpOnly cookie and require same-origin intent for deletion.
+- Revalidate stable loader/iframe entrypoints and proxy only fingerprinted JavaScript/CSS assets as immutable.
+- Redact upstream failures and secret-shaped payloads from every browser-facing chat response.
+
 ## 0.2.5 - 2026-08-28
 
 - Self-heal dynamic OAuth client ids retained by installations disconnected before v0.2.4.

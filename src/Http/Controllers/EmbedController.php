@@ -19,15 +19,14 @@ use TropikalAI\ConnectFilament\Services\UrlPolicy;
 
 class EmbedController extends Controller
 {
-    private const ASSET_RELEASE_VERSION_PATTERN = '/\A[0-9]{8}-[A-Za-z0-9][A-Za-z0-9._-]{0,31}\z/';
-
-    private const ASSETS = [
+    private const STABLE_ASSETS = [
         'chat-widget.js' => 'application/javascript; charset=utf-8',
         'iframe.html' => 'text/html; charset=utf-8',
-        'iframe.js' => 'application/javascript; charset=utf-8',
-        'iframe.css' => 'text/css; charset=utf-8',
-        'markdown.js' => 'application/javascript; charset=utf-8',
     ];
+
+    private const HASHED_ASSET_PATTERN = '/\A[A-Za-z0-9][A-Za-z0-9_-]*-[A-Za-z0-9_-]{8,}\.(?:js|css)\z/';
+
+    private const HISTORY_COOKIE_PATTERN = '/\A[a-f0-9]{64}\z/';
 
     public function widget(Request $request): Response
     {
@@ -36,26 +35,58 @@ class EmbedController extends Controller
 
     public function asset(Request $request, string $asset): Response
     {
-        if (! array_key_exists($asset, self::ASSETS)) {
+        if (! array_key_exists($asset, self::STABLE_ASSETS)) {
             abort(404);
         }
 
-        $response = Http::timeout($this->timeoutSeconds())
-            ->accept(self::ASSETS[$asset])
-            ->get($this->assetUrl($request, $asset));
+        return $this->proxyAsset($request, $asset, self::STABLE_ASSETS[$asset], false);
+    }
 
-        if (! $response->successful()) {
-            return response('Connect embed asset unavailable.', 502, [
-                'Content-Type' => 'text/plain; charset=utf-8',
-                'X-Content-Type-Options' => 'nosniff',
-            ]);
+    public function hashedAsset(Request $request, string $asset): Response
+    {
+        if (preg_match(self::HASHED_ASSET_PATTERN, $asset) !== 1) {
+            abort(404);
         }
 
-        return response($this->rewriteAssetPrefixes($response->body()), 200, [
-            'Content-Type' => self::ASSETS[$asset],
-            'Cache-Control' => 'public, max-age='.(int) config('connect-filament.embed.asset_cache_seconds', 300),
+        $contentType = str_ends_with($asset, '.css')
+            ? 'text/css; charset=utf-8'
+            : 'application/javascript; charset=utf-8';
+
+        return $this->proxyAsset($request, 'assets/'.$asset, $contentType, true);
+    }
+
+    private function proxyAsset(Request $request, string $asset, string $contentType, bool $immutable): Response
+    {
+        try {
+            $client = Http::timeout($this->timeoutSeconds())
+                ->accept($contentType)
+                ->withHeaders(array_filter([
+                    'If-None-Match' => $request->header('If-None-Match'),
+                    'If-Modified-Since' => $request->header('If-Modified-Since'),
+                ]));
+            $response = $client->get($this->assetUrl($asset));
+        } catch (\Throwable) {
+            return $this->assetUnavailableResponse();
+        }
+
+        if (! $response->successful() && $response->status() !== 304) {
+            return $this->assetUnavailableResponse();
+        }
+
+        $headers = [
+            'Content-Type' => $contentType,
+            'Cache-Control' => $this->safeAssetCacheControl($response, $immutable),
             'X-Content-Type-Options' => 'nosniff',
-        ]);
+        ];
+        foreach (['ETag', 'Last-Modified', 'Content-Security-Policy'] as $header) {
+            if (is_string($response->header($header)) && $response->header($header) !== '') {
+                $headers[$header] = $response->header($header);
+            }
+        }
+
+        $body = $response->status() === 304 ? '' : $this->rewriteAssetPrefixes($response->body());
+
+        return response($body, $response->status(), $headers);
     }
 
     public function info(Request $request): JsonResponse
@@ -80,6 +111,72 @@ class EmbedController extends Controller
         return $this->proxy($request, $controlPlane, 'POST', 'chat', $request->getContent() ?: '');
     }
 
+    public function chatSession(Request $request, ControlPlaneClient $controlPlane): Response|JsonResponse
+    {
+        return $this->proxy($request, $controlPlane, 'GET', 'session', '');
+    }
+
+    public function history(Request $request, ControlPlaneClient $controlPlane): Response|JsonResponse
+    {
+        return $this->historyProxy($request, $controlPlane, 'list');
+    }
+
+    public function historyRead(Request $request, ControlPlaneClient $controlPlane, string $conversation): Response|JsonResponse
+    {
+        return $this->historyProxy($request, $controlPlane, 'read', $conversation);
+    }
+
+    public function historyDelete(Request $request, ControlPlaneClient $controlPlane, string $conversation): Response|JsonResponse
+    {
+        if ($response = $this->assertHistoryMutation($request)) {
+            return $response;
+        }
+
+        return $this->historyProxy($request, $controlPlane, 'delete', $conversation);
+    }
+
+    public function historyClear(Request $request, ControlPlaneClient $controlPlane): Response|JsonResponse
+    {
+        if ($response = $this->assertHistoryMutation($request)) {
+            return $response;
+        }
+
+        return $this->historyProxy($request, $controlPlane, 'clear');
+    }
+
+    public function actionConfirm(Request $request, ControlPlaneClient $controlPlane, string $action): Response|JsonResponse
+    {
+        return $this->proxy($request, $controlPlane, 'POST', 'actions/'.$action.'/confirm', $request->getContent() ?: '');
+    }
+
+    public function actionCancel(Request $request, ControlPlaneClient $controlPlane, string $action): Response|JsonResponse
+    {
+        return $this->proxy($request, $controlPlane, 'POST', 'actions/'.$action.'/cancel', $request->getContent() ?: '');
+    }
+
+    private function historyProxy(Request $request, ControlPlaneClient $controlPlane, string $action, string $conversation = ''): Response|JsonResponse
+    {
+        [$token, $cookieName] = $this->historyToken($request);
+        $payload = ['visitor_history_token' => $token];
+        if ($conversation !== '') {
+            $payload['conversation_ref'] = $conversation;
+        }
+        $body = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $response = $this->proxy($request, $controlPlane, 'POST', 'history/'.$action, $body);
+
+        return $response->withCookie(cookie(
+            $cookieName,
+            $token,
+            60 * 24 * 30,
+            '/',
+            null,
+            $request->isSecure(),
+            true,
+            false,
+            'lax',
+        ));
+    }
+
     private function proxy(Request $request, ControlPlaneClient $controlPlane, string $method, string $action, string $body): Response|JsonResponse
     {
         $installation = $this->activeEmbedInstallation();
@@ -88,8 +185,12 @@ class EmbedController extends Controller
         }
 
         $path = rtrim((string) config('connect-filament.control_plane.embed_proxy_path', '/api/connect-filament/embed'), '/').'/'.$action;
-        $query = $request->getQueryString() ?? '';
-        $response = $this->proxyRequest($request, $installation, $method, $path, $query, $body);
+        $query = $this->canonicalQuery($request);
+        try {
+            $response = $this->proxyRequest($request, $installation, $method, $path, $query, $body);
+        } catch (\Throwable) {
+            return $this->chatTemporaryUnavailableResponse();
+        }
 
         if ($this->shouldRepairRegistration($response)) {
             $installation = $this->repairRegistration($installation, $controlPlane);
@@ -164,9 +265,17 @@ class EmbedController extends Controller
                 // Keep the general secret-shaped-key guard for every other
                 // field, while allowing this single documented root key.
                 $guardedPayload = $payload;
-                unset($guardedPayload['resume_token']);
-                SensitiveData::assertPublicPayload($guardedPayload);
+                unset($guardedPayload['resume_token'], $guardedPayload['history_capability']);
+                try {
+                    SensitiveData::assertPublicPayload($guardedPayload);
+                } catch (\Throwable) {
+                    return $this->chatTemporaryUnavailableResponse();
+                }
             }
+        }
+
+        if ($status >= 500) {
+            return $this->chatTemporaryUnavailableResponse();
         }
 
         return response($body, $status, [
@@ -182,6 +291,15 @@ class EmbedController extends Controller
             'error' => 'chat_not_enabled',
             'message' => 'Website chat is not enabled for this site.',
         ], 503)->header('Cache-Control', 'no-store')
+            ->header('X-Content-Type-Options', 'nosniff');
+    }
+
+    private function chatTemporaryUnavailableResponse(): JsonResponse
+    {
+        return response()->json([
+            'error' => 'chat_unavailable',
+            'message' => 'Website chat is temporarily unavailable.',
+        ], 502)->header('Cache-Control', 'no-store')
             ->header('X-Content-Type-Options', 'nosniff');
     }
 
@@ -201,16 +319,9 @@ class EmbedController extends Controller
         return rtrim((string) config('connect-filament.control_plane.embed_asset_path', '/embed'), '/').'/'.$asset;
     }
 
-    private function assetUrl(Request $request, string $asset): string
+    private function assetUrl(string $asset): string
     {
-        $url = $this->controlPlaneUrl().$this->assetPath($asset);
-        $version = $request->query('v');
-
-        if (! is_string($version) || preg_match(self::ASSET_RELEASE_VERSION_PATTERN, $version) !== 1) {
-            return $url;
-        }
-
-        return $url.'?'.http_build_query(['v' => $version], '', '&', PHP_QUERY_RFC3986);
+        return $this->controlPlaneUrl().$this->assetPath($asset);
     }
 
     private function controlPlaneUrl(): string
@@ -239,6 +350,68 @@ class EmbedController extends Controller
     private function timeoutSeconds(): int
     {
         return max(1, (int) config('connect-filament.control_plane.timeout_seconds', 20));
+    }
+
+    /** @return array{string, string} */
+    private function historyToken(Request $request): array
+    {
+        $cookieName = $request->isSecure()
+            ? (string) config('connect-filament.embed.history_cookie', '__Host-tropikal-chat-history')
+            : (string) config('connect-filament.embed.history_cookie_local', 'tropikal-chat-history');
+        $token = $request->cookie($cookieName);
+        if (! is_string($token) || preg_match(self::HISTORY_COOKIE_PATTERN, $token) !== 1) {
+            $token = bin2hex(random_bytes(32));
+        }
+
+        return [$token, $cookieName];
+    }
+
+    private function assertHistoryMutation(Request $request): ?JsonResponse
+    {
+        if ($request->header('X-Tropikal-History-Intent') !== '1') {
+            return response()->json(['error' => 'history_intent_required'], 428)
+                ->header('Cache-Control', 'no-store');
+        }
+
+        $origin = UrlPolicy::originOrNull(trim((string) $request->header('Origin', '')));
+        if ($origin === null || $origin !== $request->getSchemeAndHttpHost()) {
+            return response()->json(['error' => 'same_origin_required'], 403)
+                ->header('Cache-Control', 'no-store');
+        }
+
+        return null;
+    }
+
+    private function canonicalQuery(Request $request): string
+    {
+        $query = $request->query();
+        ksort($query);
+
+        return http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+    }
+
+    private function safeAssetCacheControl(ClientResponse $response, bool $immutable): string
+    {
+        $value = strtolower(trim((string) $response->header('Cache-Control')));
+        if ($immutable && str_contains($value, 'immutable') && str_contains($value, 'max-age=31536000')) {
+            return (string) $response->header('Cache-Control');
+        }
+        if (! $immutable && str_contains($value, 'no-cache') && str_contains($value, 'must-revalidate')) {
+            return (string) $response->header('Cache-Control');
+        }
+
+        return $immutable
+            ? 'public, max-age=31536000, immutable'
+            : 'no-cache, max-age=0, must-revalidate';
+    }
+
+    private function assetUnavailableResponse(): Response
+    {
+        return response('Connect embed asset unavailable.', 502, [
+            'Content-Type' => 'text/plain; charset=utf-8',
+            'Cache-Control' => 'no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 
     private function visitorOrigin(Request $request): string
