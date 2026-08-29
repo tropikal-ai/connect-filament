@@ -19,6 +19,8 @@ use TropikalAI\ConnectFilament\Services\UrlPolicy;
 
 class EmbedController extends Controller
 {
+    private const ASSET_RELEASE_VERSION_PATTERN = '/\A[0-9]{8}-[A-Za-z0-9][A-Za-z0-9._-]{0,31}\z/';
+
     private const ASSETS = [
         'chat-widget.js' => 'application/javascript; charset=utf-8',
         'iframe.html' => 'text/html; charset=utf-8',
@@ -40,7 +42,7 @@ class EmbedController extends Controller
 
         $response = Http::timeout($this->timeoutSeconds())
             ->accept(self::ASSETS[$asset])
-            ->get($this->controlPlaneUrl().$this->assetPath($asset));
+            ->get($this->assetUrl($asset));
 
         if (! $response->successful()) {
             return response('Connect embed asset unavailable.', 502, [
@@ -197,6 +199,18 @@ class EmbedController extends Controller
     private function assetPath(string $asset): string
     {
         return rtrim((string) config('connect-filament.control_plane.embed_asset_path', '/embed'), '/').'/'.$asset;
+    }
+
+    private function assetUrl(string $asset): string
+    {
+        $url = $this->controlPlaneUrl().$this->assetPath($asset);
+        $version = request()->query('v');
+
+        if (! is_string($version) || preg_match(self::ASSET_RELEASE_VERSION_PATTERN, $version) !== 1) {
+            return $url;
+        }
+
+        return $url.'?'.http_build_query(['v' => $version], '', '&', PHP_QUERY_RFC3986);
     }
 
     private function controlPlaneUrl(): string

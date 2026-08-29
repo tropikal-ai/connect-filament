@@ -579,6 +579,52 @@ final class ResourceApiTest extends TestCase
             ->assertDontSee('/legacy-connect', false);
     }
 
+    public function test_embed_asset_forwards_only_the_safe_release_version_query(): void
+    {
+        Http::fake([
+            '*' => Http::response(
+                'window.tropikalChatLoaded = true;',
+                200,
+                ['Content-Type' => 'application/javascript; charset=utf-8'],
+            ),
+        ]);
+
+        $this->get('/tropikal-connect/embed/chat-widget.js?v=20260829-1&token=secret&callback=alert')
+            ->assertOk();
+
+        Http::assertSent(fn (Request $request): bool => $request->url()
+            === 'https://control.example.com/embed/chat-widget.js?v=20260829-1');
+        Http::assertSentCount(1);
+    }
+
+    public function test_embed_asset_does_not_forward_unsafe_or_unrelated_query_input(): void
+    {
+        Http::fake([
+            '*' => Http::response(
+                'window.tropikalChatLoaded = true;',
+                200,
+                ['Content-Type' => 'application/javascript; charset=utf-8'],
+            ),
+        ]);
+
+        $queries = [
+            'token=secret&callback=alert',
+            'v[]=20260829-1',
+            'v=../../secrets',
+            'v=20260829-1%3Ftoken%3Dsecret',
+            'v='.str_repeat('a', 64),
+        ];
+
+        foreach ($queries as $query) {
+            $this->get('/tropikal-connect/embed/iframe.js?'.$query)->assertOk();
+        }
+
+        foreach (Http::recorded() as [$request]) {
+            $this->assertSame('https://control.example.com/embed/iframe.js', $request->url());
+        }
+        Http::assertSentCount(count($queries));
+    }
+
     public function test_widget_bootstrap_serves_the_actual_chat_widget(): void
     {
         Http::fake([
