@@ -610,9 +610,11 @@ final class ResourceApiTest extends TestCase
         $queries = [
             'token=secret&callback=alert',
             'v[]=20260829-1',
+            'v[release]=20260829-1',
             'v=../../secrets',
             'v=20260829-1%3Ftoken%3Dsecret',
-            'v='.str_repeat('a', 64),
+            'v=20260829-1%0D%0AX-Injected%3A+true',
+            'v=20260829-'.str_repeat('a', 33),
         ];
 
         foreach ($queries as $query) {

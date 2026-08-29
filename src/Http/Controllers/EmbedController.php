@@ -29,12 +29,12 @@ class EmbedController extends Controller
         'markdown.js' => 'application/javascript; charset=utf-8',
     ];
 
-    public function widget(): Response
+    public function widget(Request $request): Response
     {
-        return $this->asset('chat-widget.js');
+        return $this->asset($request, 'chat-widget.js');
     }
 
-    public function asset(string $asset): Response
+    public function asset(Request $request, string $asset): Response
     {
         if (! array_key_exists($asset, self::ASSETS)) {
             abort(404);
@@ -42,7 +42,7 @@ class EmbedController extends Controller
 
         $response = Http::timeout($this->timeoutSeconds())
             ->accept(self::ASSETS[$asset])
-            ->get($this->assetUrl($asset));
+            ->get($this->assetUrl($request, $asset));
 
         if (! $response->successful()) {
             return response('Connect embed asset unavailable.', 502, [
@@ -201,10 +201,10 @@ class EmbedController extends Controller
         return rtrim((string) config('connect-filament.control_plane.embed_asset_path', '/embed'), '/').'/'.$asset;
     }
 
-    private function assetUrl(string $asset): string
+    private function assetUrl(Request $request, string $asset): string
     {
         $url = $this->controlPlaneUrl().$this->assetPath($asset);
-        $version = request()->query('v');
+        $version = $request->query('v');
 
         if (! is_string($version) || preg_match(self::ASSET_RELEASE_VERSION_PATTERN, $version) !== 1) {
             return $url;
