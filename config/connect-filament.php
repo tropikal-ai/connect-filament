@@ -74,7 +74,8 @@ return [
         'enabled' => (bool) env('CONNECT_FILAMENT_EMBED_ENABLED', true),
         'prefix' => env('CONNECT_FILAMENT_EMBED_PREFIX', 'tropikal-connect'),
         'base_url' => env('CONNECT_FILAMENT_EMBED_BASE_URL'),
-        'asset_cache_seconds' => (int) env('CONNECT_FILAMENT_EMBED_ASSET_CACHE_SECONDS', 300),
+        'history_cookie' => env('CONNECT_FILAMENT_HISTORY_COOKIE', '__Host-tropikal-chat-history'),
+        'history_cookie_local' => env('CONNECT_FILAMENT_HISTORY_COOKIE_LOCAL', 'tropikal-chat-history'),
         'asset_rewrite_prefixes' => [],
     ],
 
