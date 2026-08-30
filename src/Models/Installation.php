@@ -161,12 +161,28 @@ class Installation extends Model
 
     public static function embedSnippet(?string $prefix = null): string
     {
-        $prefix = trim($prefix ?: (string) config('connect-filament.embed.prefix', 'tropikal-connect'), '/');
-        if ($prefix === '') {
-            throw new \InvalidArgumentException('The embed route prefix cannot be empty.');
+        if ($prefix !== null) {
+            $prefix = trim($prefix, '/');
+            if ($prefix === '') {
+                throw new \InvalidArgumentException('The embed route prefix cannot be empty.');
+            }
+
+            return sprintf('<script async src="/%s/embed/chat-widget.js"></script>', $prefix);
         }
 
-        return sprintf('<script async src="/%s/embed/chat-widget.js"></script>', $prefix);
+        $configured = trim((string) config('connect-filament.embed.loader_url', ''));
+        if ($configured !== '') {
+            $loaderUrl = UrlPolicy::trustedBaseUrl($configured, 'The embed loader URL');
+        } else {
+            $controlPlane = UrlPolicy::trustedBaseUrl(
+                (string) config('connect-filament.control_plane.base_url'),
+                'The control plane URL',
+            );
+            $assetPath = '/'.trim((string) config('connect-filament.control_plane.embed_asset_path', '/embed'), '/');
+            $loaderUrl = $controlPlane.$assetPath.'/chat-widget.js';
+        }
+
+        return sprintf('<script async src="%s"></script>', htmlspecialchars($loaderUrl, ENT_QUOTES, 'UTF-8'));
     }
 
     public function markDisconnected(): void

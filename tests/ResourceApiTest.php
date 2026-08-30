@@ -616,8 +616,13 @@ final class ResourceApiTest extends TestCase
     public function test_embed_snippet_loads_the_actual_chat_widget(): void
     {
         $this->assertSame(
-            '<script async src="/tropikal-connect/embed/chat-widget.js"></script>',
+            '<script async src="https://control.example.com/embed/chat-widget.js"></script>',
             Installation::embedSnippet(),
+        );
+
+        $this->assertSame(
+            '<script async src="/custom-connect/embed/chat-widget.js"></script>',
+            Installation::embedSnippet('custom-connect'),
         );
     }
 
@@ -704,6 +709,68 @@ final class ResourceApiTest extends TestCase
             && $request->hasHeader('Authorization')
             && $request['installation_public_id'] === $installation->public_id
             && ! isset($request['server_signing_key'], $request['refresh_token']));
+    }
+
+    public function test_public_chat_info_recreates_a_missing_control_plane_installation_and_retries(): void
+    {
+        $installation = $this->connectedInstallation([
+            'embed_status' => Installation::EMBED_ENABLED,
+            'server_signing_key_encrypted' => 'orphaned-server-signing-key',
+        ]);
+
+        Http::fake([
+            'https://control.example.com/api/connect-filament/embed/info*' => Http::sequence()
+                ->push(['detail' => 'Connect installation not found'], 404)
+                ->push([
+                    'display_name' => 'Recovered Front Desk',
+                    'avatar_url' => null,
+                    'welcome_message' => 'Hi.',
+                    'theme' => ['name' => 'tropikal'],
+                    'capability_disclosures' => [],
+                ], 200),
+            'https://auth.example.com/oauth/token' => Http::response([
+                'access_token' => 'access-after-repair',
+                'refresh_token' => 'refresh-after-repair',
+            ]),
+            'https://control.example.com/api/connect-filament/installations' => Http::response([
+                'installation_id' => 'remote_installation_recreated',
+                'server_signing_key' => 'recreated-server-signing-key',
+                'allowed_resources' => [],
+                'resource_permissions' => [],
+                'account' => [
+                    'id' => 'owner_123',
+                    'email' => 'owner@example.com',
+                    'workspace_id' => 'workspace_123',
+                ],
+                'embed' => [
+                    'status' => Installation::EMBED_ENABLED,
+                    'public_id' => 'embed_123',
+                    'display_name' => 'Recovered Front Desk',
+                ],
+            ]),
+        ]);
+
+        $this->getJson('/tropikal-connect/api/chat/info')
+            ->assertOk()
+            ->assertJsonPath('display_name', 'Recovered Front Desk');
+
+        $installation->refresh();
+        $this->assertSame('recreated-server-signing-key', $installation->server_signing_key_encrypted);
+        Http::assertSentCount(4);
+    }
+
+    public function test_unrelated_not_found_response_does_not_trigger_registration_repair(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        Http::fake([
+            'https://control.example.com/api/connect-filament/embed/info*' => Http::response([
+                'detail' => 'Chat configuration not found',
+            ], 404),
+        ]);
+
+        $this->getJson('/tropikal-connect/api/chat/info')->assertNotFound();
+
+        Http::assertSentCount(1);
     }
 
     public function test_public_chat_api_routes_use_api_middleware_not_web_sessions(): void
