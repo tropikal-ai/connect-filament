@@ -11,6 +11,7 @@ use Illuminate\Http\Response;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\Cookie;
 use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
 use TropikalAI\ConnectFilament\Models\Installation;
@@ -164,16 +165,16 @@ class EmbedController extends Controller
         $body = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         $response = $this->proxy($request, $controlPlane, 'POST', 'history/'.$action, $body);
 
-        return $response->withCookie(cookie(
+        return $response->withCookie(new Cookie(
             $cookieName,
             $token,
-            60 * 24 * 30,
+            now()->addDays(30),
             '/',
             null,
             $request->isSecure(),
             true,
             false,
-            'lax',
+            Cookie::SAMESITE_LAX,
         ));
     }
 
