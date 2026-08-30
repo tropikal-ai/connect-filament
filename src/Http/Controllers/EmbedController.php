@@ -204,21 +204,19 @@ class EmbedController extends Controller
 
     private function proxyRequest(Request $request, Installation $installation, string $method, string $path, string $query, string $body): ClientResponse
     {
-        $headers = SignedRequest::headers(
+        $headers = SignedRequest::headersWithRequestOrigin(
             (string) $installation->server_signing_key_encrypted,
             (string) $installation->public_id,
             $method,
             $path,
+            $this->visitorOrigin($request),
             $query,
             $body,
         );
 
         $client = Http::timeout($this->timeoutSeconds())
             ->acceptJson()
-            ->withHeaders([
-                ...$headers,
-                'X-Embed-Origin' => $this->visitorOrigin($request),
-            ]);
+            ->withHeaders($headers);
 
         $url = $this->controlPlaneUrl().$path.($query !== '' ? '?'.$query : '');
 
