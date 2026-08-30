@@ -204,30 +204,15 @@ class EmbedController extends Controller
 
     private function proxyRequest(Request $request, Installation $installation, string $method, string $path, string $query, string $body): ClientResponse
     {
-        $origin = $this->visitorOrigin($request);
-        $headers = SignedRequest::headers(
+        $headers = SignedRequest::headersWithRequestOrigin(
             (string) $installation->server_signing_key_encrypted,
             (string) $installation->public_id,
             $method,
             $path,
+            $this->visitorOrigin($request),
             $query,
             $body,
         );
-        $canonical = SignedRequest::canonical(
-            (string) $installation->public_id,
-            $method,
-            $path,
-            $query,
-            (int) $headers[SignedRequest::TIMESTAMP_HEADER],
-            $headers[SignedRequest::NONCE_HEADER],
-            $headers[SignedRequest::BODY_HASH_HEADER],
-        )."\n".$origin;
-        $headers[SignedRequest::SIGNATURE_HEADER] = hash_hmac(
-            'sha256',
-            $canonical,
-            trim((string) $installation->server_signing_key_encrypted),
-        );
-        $headers['X-Tropikal-Connect-Request-Origin'] = $origin;
 
         $client = Http::timeout($this->timeoutSeconds())
             ->acceptJson()
