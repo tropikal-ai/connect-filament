@@ -57,9 +57,55 @@ class PublicEmbedTest extends TestCase
                 (int) $request->header(SignedRequest::TIMESTAMP_HEADER)[0],
                 (string) $request->header(SignedRequest::NONCE_HEADER)[0],
             );
+            $expectedSignature = hash_hmac(
+                'sha256',
+                SignedRequest::canonical(
+                    (string) $installation->public_id,
+                    'GET',
+                    '/api/connect-filament/embed/session',
+                    $query,
+                    (int) $expected[SignedRequest::TIMESTAMP_HEADER],
+                    $expected[SignedRequest::NONCE_HEADER],
+                    $expected[SignedRequest::BODY_HASH_HEADER],
+                )."\nhttps://cms.example.com",
+                (string) $installation->server_signing_key_encrypted,
+            );
 
             return $request->url() === 'https://control.example.com/api/connect-filament/embed/session?'.$query
-                && hash_equals($expected[SignedRequest::SIGNATURE_HEADER], $request->header(SignedRequest::SIGNATURE_HEADER)[0]);
+                && hash_equals($expectedSignature, $request->header(SignedRequest::SIGNATURE_HEADER)[0]);
+        });
+    }
+
+    public function test_public_embed_signature_binds_the_normalized_visitor_origin(): void
+    {
+        $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        Http::fake(['*' => Http::response(['display_name' => 'Example Front Desk'])]);
+
+        $this->getJson('/tropikal-connect/api/chat/info?b=2&a=1', [
+            'X-Embed-Origin' => 'https://cms.example.com',
+        ])->assertOk();
+
+        Http::assertSent(function (ClientRequest $request) use ($installation): bool {
+            $timestamp = (int) $request->header(SignedRequest::TIMESTAMP_HEADER)[0];
+            $nonce = (string) $request->header(SignedRequest::NONCE_HEADER)[0];
+            $bodyHash = SignedRequest::bodyHash('');
+            $canonical = SignedRequest::canonical(
+                (string) $installation->public_id,
+                'GET',
+                '/api/connect-filament/embed/info',
+                'a=1&b=2',
+                $timestamp,
+                $nonce,
+                $bodyHash,
+            )."\nhttps://cms.example.com";
+            $expected = hash_hmac(
+                'sha256',
+                $canonical,
+                (string) $installation->server_signing_key_encrypted,
+            );
+
+            return $request->hasHeader('X-Tropikal-Connect-Request-Origin', 'https://cms.example.com')
+                && hash_equals($expected, $request->header(SignedRequest::SIGNATURE_HEADER)[0]);
         });
     }
 
