@@ -626,7 +626,7 @@ final class ResourceApiTest extends TestCase
                 && $request->method() === 'POST'
                 && $request->hasHeader(SignedRequest::INSTALLATION_HEADER, (string) $installation->public_id)
                 && $request->hasHeader(SignedRequest::SIGNATURE_HEADER)
-                && $request->hasHeader('X-Tropikal-Connect-Request-Origin', 'https://cms.example.com')
+                && $request->hasHeader(SignedRequest::REQUEST_ORIGIN_HEADER, 'https://cms.example.com')
                 && ! $request->hasHeader('Authorization');
         });
     }
@@ -648,7 +648,7 @@ final class ResourceApiTest extends TestCase
             'Referer' => 'https://cms.example.com/projects',
         ])->assertOk();
 
-        Http::assertSent(fn (Request $request): bool => $request->hasHeader('X-Tropikal-Connect-Request-Origin', 'https://cms.example.com'));
+        Http::assertSent(fn (Request $request): bool => $request->hasHeader(SignedRequest::REQUEST_ORIGIN_HEADER, 'https://cms.example.com'));
     }
 
     public function test_public_chat_info_proxies_with_signed_connect_request(): void
@@ -677,7 +677,7 @@ final class ResourceApiTest extends TestCase
                 && $request->hasHeader(SignedRequest::INSTALLATION_HEADER, (string) $installation->public_id)
                 && $request->hasHeader(SignedRequest::SIGNATURE_HEADER)
                 && $request->hasHeader(SignedRequest::BODY_HASH_HEADER, hash('sha256', ''))
-                && $request->hasHeader('X-Tropikal-Connect-Request-Origin', 'https://cms.example.com')
+                && $request->hasHeader(SignedRequest::REQUEST_ORIGIN_HEADER, 'https://cms.example.com')
                 && ! $request->hasHeader('Authorization');
         });
     }
