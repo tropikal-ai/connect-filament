@@ -84,7 +84,7 @@ class EmbedController extends Controller
             }
         }
 
-        $body = $response->status() === 304 ? '' : $this->rewriteAssetPrefixes($response->body());
+        $body = $response->status() === 304 ? '' : $this->rewriteAssetUrls($asset, $response->body());
 
         return response($body, $response->status(), $headers);
     }
@@ -229,7 +229,18 @@ class EmbedController extends Controller
 
     private function shouldRepairRegistration(ClientResponse $response): bool
     {
-        return in_array($response->status(), [401, 403], true);
+        if (in_array($response->status(), [401, 403], true)) {
+            return true;
+        }
+
+        if ($response->status() !== 404) {
+            return false;
+        }
+
+        $detail = $response->json('detail');
+
+        return is_string($detail)
+            && strcasecmp(trim($detail), 'Connect installation not found') === 0;
     }
 
     private function repairRegistration(Installation $installation, ControlPlaneClient $controlPlane): ?Installation
@@ -329,8 +340,12 @@ class EmbedController extends Controller
         return UrlPolicy::trustedBaseUrl((string) config('connect-filament.control_plane.base_url'), 'The control plane URL');
     }
 
-    private function rewriteAssetPrefixes(string $body): string
+    private function rewriteAssetUrls(string $asset, string $body): string
     {
+        if ($asset === 'iframe.html') {
+            $body = str_replace('./assets/', $this->assetUrl('assets/'), $body);
+        }
+
         $prefix = '/'.trim((string) config('connect-filament.embed.prefix', 'tropikal-connect'), '/');
         $legacyPrefixes = config('connect-filament.embed.asset_rewrite_prefixes', []);
         if (! is_array($legacyPrefixes)) {

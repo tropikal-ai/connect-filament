@@ -228,6 +228,24 @@ class PublicEmbedTest extends TestCase
             && ! $request->hasHeader(SignedRequest::SIGNATURE_HEADER));
     }
 
+    public function test_iframe_document_loads_content_hashed_assets_directly_from_the_control_plane(): void
+    {
+        Http::fake([
+            'https://control.example.com/embed/iframe.html' => Http::response(
+                '<script type="module" src="./assets/iframe-a1b2c3d4.js"></script>'
+                .'<link rel="stylesheet" href="./assets/iframe-e5f6g7h8.css">',
+                200,
+                ['Content-Type' => 'text/html; charset=utf-8'],
+            ),
+        ]);
+
+        $response = $this->get('/tropikal-connect/embed/iframe.html')->assertOk();
+
+        $response->assertSee('https://control.example.com/embed/assets/iframe-a1b2c3d4.js', false)
+            ->assertSee('https://control.example.com/embed/assets/iframe-e5f6g7h8.css', false)
+            ->assertDontSee('./assets/', false);
+    }
+
     public function test_asset_proxy_rejects_flat_mutable_and_unsafe_paths(): void
     {
         Http::fake(['*' => Http::response('must-not-be-used')]);
