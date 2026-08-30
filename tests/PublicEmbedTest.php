@@ -101,6 +101,7 @@ class PublicEmbedTest extends TestCase
 
     public function test_history_cookie_is_http_only_secure_host_scoped_and_sliding(): void
     {
+        config()->set('session.domain', '.cms.example.com');
         $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
         Http::fake(function (ClientRequest $request) {
             $payload = json_decode($request->body(), true, flags: JSON_THROW_ON_ERROR);
