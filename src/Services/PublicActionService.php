@@ -47,7 +47,6 @@ final class PublicActionService
     public function confirm(
         string $actionId,
         array $body,
-        string $remoteIp,
         callable $forward,
     ): Response|JsonResponse {
         $proof = $this->string($body, 'proof_of_work_token', 4096);
@@ -58,7 +57,6 @@ final class PublicActionService
 
         $verification = $forward(self::VERIFY_PATH, $this->json([
             'token' => $proof,
-            'remote_ip' => $remoteIp,
             'session_id' => $sessionId,
             'action_id' => $actionId,
         ]));

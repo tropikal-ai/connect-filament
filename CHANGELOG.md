@@ -4,6 +4,7 @@
 
 - Add the first-party human-verification challenge route and require a site-, session-, and action-bound proof before forwarding public booking confirmations.
 - Strip browser proof and verification fields from signed action decisions; fail closed with safe typed verification errors while keeping cancellation proof-free.
+- Remove the unused remote-IP field from the signed proof-verification contract; proof remains bound to site, session, and action.
 - Complete the public Website Chat adapter with signed session, anonymous history, and action-decision routes.
 - Bind anonymous history to a rotating 256-bit first-party HttpOnly cookie and require same-origin intent for deletion.
 - Revalidate stable loader/iframe entrypoints and proxy only fingerprinted JavaScript/CSS assets as immutable.

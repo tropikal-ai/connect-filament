@@ -284,7 +284,6 @@ class PublicEmbedTest extends TestCase
                 'url' => 'https://control.example.com/api/connect-filament/public/human-verification',
                 'body' => [
                     'token' => 'browser-proof-token',
-                    'remote_ip' => '127.0.0.1',
                     'session_id' => 'embed_session_123',
                     'action_id' => $action,
                 ],
