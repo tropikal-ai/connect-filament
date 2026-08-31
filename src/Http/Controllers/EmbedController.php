@@ -270,12 +270,10 @@ class EmbedController extends Controller
         if (str_contains(strtolower($contentType), 'json')) {
             $payload = json_decode($body, true);
             if (is_array($payload)) {
-                // The embed protocol intentionally returns an opaque resume
-                // token to the browser so a visitor can continue a session.
-                // Keep the general secret-shaped-key guard for every other
-                // field, while allowing this single documented root key.
-                $guardedPayload = $payload;
-                unset($guardedPayload['resume_token'], $guardedPayload['history_capability']);
+                // The embed protocol has a few exact public exceptions to the
+                // generic secret-shaped-key rule. Every other path is still
+                // checked before the response reaches the browser.
+                $guardedPayload = $this->guardedPublicPayload($payload);
                 try {
                     SensitiveData::assertPublicPayload($guardedPayload);
                 } catch (\Throwable) {
@@ -293,6 +291,43 @@ class EmbedController extends Controller
             'Cache-Control' => 'no-store',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    /**
+     * Remove only documented public-protocol exceptions from the generic
+     * secret-shaped-key guard.
+     *
+     * Interactive review fields use `key` as a stable presentation identifier
+     * (for example `service` or `time`). The Connect security primitive treats
+     * every property literally named `key` as server-only, so running the raw
+     * review through it would reject a valid pending action. Limit the
+     * exception to that exact typed-review path; every field value and every
+     * other key remains guarded.
+     */
+    private function guardedPublicPayload(array $payload): array
+    {
+        unset($payload['resume_token'], $payload['history_capability']);
+
+        $review = $payload['pending_action']['review'] ?? null;
+        $fields = is_array($review) ? ($review['fields'] ?? null) : null;
+        if (($review['schema'] ?? null) !== 'interactive_action_review.v1' || ! is_array($fields)) {
+            return $payload;
+        }
+
+        foreach (array_keys($fields) as $index) {
+            $field = $payload['pending_action']['review']['fields'][$index] ?? null;
+            $key = is_array($field) ? ($field['key'] ?? null) : null;
+            if (
+                ! is_string($key)
+                || preg_match('/\A[a-z][a-z0-9_.-]{0,63}\z/', $key) !== 1
+                || ! SensitiveData::isPublicKey($key)
+            ) {
+                return $payload;
+            }
+            unset($payload['pending_action']['review']['fields'][$index]['key']);
+        }
+
+        return $payload;
     }
 
     private function chatUnavailableResponse(): JsonResponse
