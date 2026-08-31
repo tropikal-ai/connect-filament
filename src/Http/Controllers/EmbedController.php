@@ -172,7 +172,6 @@ class EmbedController extends Controller
         return $actions->confirm(
             $action,
             $request->json()->all(),
-            (string) $request->ip(),
             fn (string $path, string $body): Response|JsonResponse => $this->proxyPath(
                 $request,
                 $controlPlane,
