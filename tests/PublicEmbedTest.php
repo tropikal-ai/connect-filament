@@ -23,6 +23,7 @@ class PublicEmbedTest extends TestCase
             'connect-filament.embed.chat.history.read' => ['GET'],
             'connect-filament.embed.chat.history.delete' => ['DELETE'],
             'connect-filament.embed.chat.history.clear' => ['DELETE'],
+            'connect-filament.embed.human-verification.challenge' => ['POST'],
             'connect-filament.embed.chat.actions.confirm' => ['POST'],
             'connect-filament.embed.chat.actions.cancel' => ['POST'],
         ];
@@ -218,6 +219,151 @@ class PublicEmbedTest extends TestCase
         Http::assertSent(fn (ClientRequest $request): bool => $request->url()
             === 'https://control.example.com/api/connect-filament/embed/actions/'.$action.'/cancel'
             && ! str_contains($request->body(), str_repeat('b', 64)));
+    }
+
+    public function test_human_verification_challenge_uses_the_exact_signed_public_contract(): void
+    {
+        $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $action = '018f1e22-9abc-7def-8123-456789abcdef';
+        $expectedBody = json_encode([
+            'session_id' => 'embed_session_123',
+            'action_id' => $action,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        Http::fake(['*' => Http::response(['challenge' => ['seed' => 'seed-1', 'bits' => 18]])]);
+
+        $this->postJson('/tropikal-connect/api/human-verification/challenge', [
+            'session_id' => 'embed_session_123',
+            'action_id' => $action,
+        ], ['X-Embed-Origin' => 'https://cms.example.com'])
+            ->assertOk()
+            ->assertJsonPath('challenge.seed', 'seed-1');
+
+        Http::assertSent(function (ClientRequest $request) use ($installation, $expectedBody): bool {
+            $path = '/api/connect-filament/public/human-verification/challenge';
+            $expected = SignedRequest::headersWithRequestOrigin(
+                (string) $installation->server_signing_key_encrypted,
+                (string) $installation->public_id,
+                'POST',
+                $path,
+                'https://cms.example.com',
+                '',
+                $expectedBody,
+                (int) $request->header(SignedRequest::TIMESTAMP_HEADER)[0],
+                (string) $request->header(SignedRequest::NONCE_HEADER)[0],
+            );
+
+            return $request->url() === 'https://control.example.com'.$path
+                && $request->body() === $expectedBody
+                && hash_equals($expected[SignedRequest::SIGNATURE_HEADER], $request->header(SignedRequest::SIGNATURE_HEADER)[0]);
+        });
+    }
+
+    public function test_confirm_verifies_bound_proof_then_forwards_only_the_decision_contract(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $action = '018f1e22-9abc-7def-8123-456789abcdef';
+        $requests = [];
+        Http::fake(function (ClientRequest $request) use (&$requests) {
+            $requests[] = ['url' => $request->url(), 'body' => json_decode($request->body(), true, flags: JSON_THROW_ON_ERROR)];
+
+            return str_ends_with($request->url(), '/public/human-verification')
+                ? Http::response(['verified' => true])
+                : Http::response(['status' => 'executed', 'reply_kind' => 'booking_confirmed']);
+        });
+
+        $this->postJson('/tropikal-connect/api/chat/actions/'.$action.'/confirm', [
+            'decision_capability' => 'opaque-decision-capability',
+            'resume_token' => 'opaque-resume-token',
+            'session_id' => 'embed_session_123',
+            'proof_of_work_token' => 'browser-proof-token',
+            'human_verified' => true,
+        ])->assertOk()->assertJsonPath('status', 'executed');
+
+        $this->assertSame([
+            [
+                'url' => 'https://control.example.com/api/connect-filament/public/human-verification',
+                'body' => [
+                    'token' => 'browser-proof-token',
+                    'remote_ip' => '127.0.0.1',
+                    'session_id' => 'embed_session_123',
+                    'action_id' => $action,
+                ],
+            ],
+            [
+                'url' => 'https://control.example.com/api/connect-filament/embed/actions/'.$action.'/confirm',
+                'body' => [
+                    'decision_capability' => 'opaque-decision-capability',
+                    'resume_token' => 'opaque-resume-token',
+                    'session_id' => 'embed_session_123',
+                ],
+            ],
+        ], $requests);
+    }
+
+    public function test_failed_or_missing_proof_never_reaches_action_execution(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $action = '018f1e22-9abc-7def-8123-456789abcdef';
+        Http::fake(['*' => Http::response(['verified' => false], 422)]);
+
+        $this->postJson('/tropikal-connect/api/chat/actions/'.$action.'/confirm', [
+            'decision_capability' => 'opaque-decision-capability',
+            'resume_token' => 'opaque-resume-token',
+            'session_id' => 'embed_session_123',
+            'proof_of_work_token' => 'bad-proof',
+        ])->assertStatus(422)->assertExactJson([
+            'error' => 'verification_failed',
+            'message' => 'Please complete human verification again.',
+        ]);
+        Http::assertSentCount(1);
+
+        Http::fake();
+        $this->postJson('/tropikal-connect/api/chat/actions/'.$action.'/confirm', [
+            'decision_capability' => 'opaque-decision-capability',
+            'resume_token' => 'opaque-resume-token',
+            'session_id' => 'embed_session_123',
+        ])->assertStatus(422)->assertJsonPath('error', 'verification_failed');
+        Http::assertNothingSent();
+    }
+
+    public function test_verification_outage_fails_closed_with_a_safe_typed_error(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        Http::fake(['*' => Http::response(['detail' => 'redis password leaked'], 503)]);
+
+        $response = $this->postJson(
+            '/tropikal-connect/api/chat/actions/018f1e22-9abc-7def-8123-456789abcdef/confirm',
+            [
+                'decision_capability' => 'opaque-decision-capability',
+                'resume_token' => 'opaque-resume-token',
+                'session_id' => 'embed_session_123',
+                'proof_of_work_token' => 'browser-proof-token',
+            ],
+        )->assertStatus(503)->assertExactJson([
+            'error' => 'verification_unavailable',
+            'message' => 'Human verification is temporarily unavailable. Please retry.',
+        ]);
+        $this->assertStringNotContainsString('redis', $response->getContent());
+        Http::assertSentCount(1);
+    }
+
+    public function test_cancel_remains_proof_free_and_idempotent(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $action = '018f1e22-9abc-7def-8123-456789abcdef';
+        Http::fake(['*' => Http::response(['status' => 'canceled', 'reply_kind' => 'booking_canceled'])]);
+        $payload = [
+            'decision_capability' => 'opaque-decision-capability',
+            'resume_token' => 'opaque-resume-token',
+            'session_id' => 'embed_session_123',
+        ];
+
+        $this->postJson('/tropikal-connect/api/chat/actions/'.$action.'/cancel', $payload)->assertOk();
+        $this->postJson('/tropikal-connect/api/chat/actions/'.$action.'/cancel', $payload)->assertOk();
+
+        Http::assertSentCount(2);
+        Http::assertSent(fn (ClientRequest $request): bool => str_ends_with($request->url(), '/actions/'.$action.'/cancel')
+            && ! str_contains($request->url(), 'human-verification'));
     }
 
     public function test_chat_relays_typed_action_review_field_keys(): void
