@@ -220,6 +220,86 @@ class PublicEmbedTest extends TestCase
             && ! str_contains($request->body(), str_repeat('b', 64)));
     }
 
+    public function test_chat_relays_typed_action_review_field_keys(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        Http::fake(['*' => Http::response([
+            'status' => 'completed',
+            'reply' => 'Please review your booking.',
+            'pending_action' => [
+                'review' => [
+                    'schema' => 'interactive_action_review.v1',
+                    'id' => '018f1e22-9abc-7def-8123-456789abcdef',
+                    'kind' => 'booking.appointment.create',
+                    'fields' => [
+                        ['key' => 'service', 'label' => 'Service', 'value' => 'Consultation'],
+                        ['key' => 'email', 'label' => 'Email', 'value' => 'a***@example.test'],
+                    ],
+                ],
+                'decision_capability' => 'opaque-decision-capability',
+            ],
+            'resume_token' => 'opaque-resume-token',
+        ])]);
+
+        $this->postJson('/tropikal-connect/api/chat', [
+            'message' => 'Book the selected time',
+            'session_id' => 'embed_session_123',
+        ])->assertOk()
+            ->assertJsonPath('pending_action.review.fields.0.key', 'service')
+            ->assertJsonPath('pending_action.review.fields.1.key', 'email')
+            ->assertJsonPath('pending_action.decision_capability', 'opaque-decision-capability');
+    }
+
+    public function test_action_review_rejects_secret_shaped_field_identifiers(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        foreach (['api_key', 'password', 'server_secret'] as $fieldKey) {
+            Http::fake(['*' => Http::response([
+                'pending_action' => [
+                    'review' => [
+                        'schema' => 'interactive_action_review.v1',
+                        'fields' => [[
+                            'key' => $fieldKey,
+                            'label' => 'Sensitive',
+                            'value' => 'must-not-leak',
+                        ]],
+                    ],
+                ],
+            ])]);
+
+            $response = $this->postJson('/tropikal-connect/api/chat', [
+                'message' => 'Book the selected time',
+                'session_id' => 'embed_session_123',
+            ])->assertStatus(502);
+
+            $this->assertStringNotContainsString('must-not-leak', $response->getContent());
+            $response->assertJsonPath('error', 'chat_unavailable');
+        }
+    }
+
+    public function test_action_review_field_key_exception_requires_the_versioned_schema(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        Http::fake(['*' => Http::response([
+            'pending_action' => [
+                'review' => [
+                    'schema' => 'unknown_review.v1',
+                    'fields' => [[
+                        'key' => 'service',
+                        'label' => 'Service',
+                        'value' => 'Consultation',
+                    ]],
+                ],
+            ],
+        ])]);
+
+        $this->postJson('/tropikal-connect/api/chat', [
+            'message' => 'Book the selected time',
+            'session_id' => 'embed_session_123',
+        ])->assertStatus(502)
+            ->assertJsonPath('error', 'chat_unavailable');
+    }
+
     public function test_stable_and_hashed_assets_preserve_only_safe_provider_headers(): void
     {
         Http::fake([
