@@ -16,6 +16,7 @@ use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\ControlPlaneClient;
+use TropikalAI\ConnectFilament\Services\PublicActionService;
 use TropikalAI\ConnectFilament\Services\UrlPolicy;
 
 class EmbedController extends Controller
@@ -145,14 +146,60 @@ class EmbedController extends Controller
         return $this->historyProxy($request, $controlPlane, 'clear');
     }
 
-    public function actionConfirm(Request $request, ControlPlaneClient $controlPlane, string $action): Response|JsonResponse
-    {
-        return $this->proxy($request, $controlPlane, 'POST', 'actions/'.$action.'/confirm', $request->getContent() ?: '');
+    public function humanVerificationChallenge(
+        Request $request,
+        ControlPlaneClient $controlPlane,
+        PublicActionService $actions,
+    ): Response|JsonResponse {
+        return $actions->challenge(
+            $request->json()->all(),
+            fn (string $path, string $body): Response|JsonResponse => $this->proxyPath(
+                $request,
+                $controlPlane,
+                'POST',
+                $path,
+                $body,
+            ),
+        );
     }
 
-    public function actionCancel(Request $request, ControlPlaneClient $controlPlane, string $action): Response|JsonResponse
-    {
-        return $this->proxy($request, $controlPlane, 'POST', 'actions/'.$action.'/cancel', $request->getContent() ?: '');
+    public function actionConfirm(
+        Request $request,
+        ControlPlaneClient $controlPlane,
+        PublicActionService $actions,
+        string $action,
+    ): Response|JsonResponse {
+        return $actions->confirm(
+            $action,
+            $request->json()->all(),
+            (string) $request->ip(),
+            fn (string $path, string $body): Response|JsonResponse => $this->proxyPath(
+                $request,
+                $controlPlane,
+                'POST',
+                $path,
+                $body,
+            ),
+        );
+    }
+
+    public function actionCancel(
+        Request $request,
+        ControlPlaneClient $controlPlane,
+        PublicActionService $actions,
+        string $action,
+    ): Response|JsonResponse {
+        return $actions->cancel(
+            $action,
+            $request->json()->all(),
+            fn (string $path, string $body): Response|JsonResponse => $this->proxyPath(
+                $request,
+                $controlPlane,
+                'POST',
+                $path,
+                $body,
+            ),
+        );
     }
 
     private function historyProxy(Request $request, ControlPlaneClient $controlPlane, string $action, string $conversation = ''): Response|JsonResponse
@@ -180,12 +227,18 @@ class EmbedController extends Controller
 
     private function proxy(Request $request, ControlPlaneClient $controlPlane, string $method, string $action, string $body): Response|JsonResponse
     {
+        $path = rtrim((string) config('connect-filament.control_plane.embed_proxy_path', '/api/connect-filament/embed'), '/').'/'.$action;
+
+        return $this->proxyPath($request, $controlPlane, $method, $path, $body);
+    }
+
+    private function proxyPath(Request $request, ControlPlaneClient $controlPlane, string $method, string $path, string $body): Response|JsonResponse
+    {
         $installation = $this->activeEmbedInstallation();
         if (! $installation) {
             return $this->chatUnavailableResponse();
         }
 
-        $path = rtrim((string) config('connect-filament.control_plane.embed_proxy_path', '/api/connect-filament/embed'), '/').'/'.$action;
         $query = $this->canonicalQuery($request);
         try {
             $response = $this->proxyRequest($request, $installation, $method, $path, $query, $body);
