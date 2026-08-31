@@ -27,6 +27,8 @@ Route::prefix($prefix)
             Route::delete('/api/chat/history/{conversation}', [EmbedController::class, 'historyDelete'])
                 ->whereUuid('conversation')
                 ->name('embed.chat.history.delete');
+            Route::post('/api/human-verification/challenge', [EmbedController::class, 'humanVerificationChallenge'])
+                ->name('embed.human-verification.challenge');
             Route::post('/api/chat/actions/{action}/confirm', [EmbedController::class, 'actionConfirm'])
                 ->whereUuid('action')
                 ->name('embed.chat.actions.confirm');
