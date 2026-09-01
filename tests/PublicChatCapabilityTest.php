@@ -38,7 +38,8 @@ final class PublicChatCapabilityTest extends TestCase
         $schemaPath = "/api/tropikal-connect/installations/{$installation->public_id}/control-plane-resources";
         $this->signedGet($installation, $schemaPath, null, 'cap_schema')
             ->assertOk()
-            ->assertJsonPath('public_chat_capabilities.0.kind', 'aoss.member_training.book.v1');
+            ->assertJsonPath('public_chat_capabilities.0.kind', 'aoss.member_training.book.v1')
+            ->assertJsonPath('public_chat_capabilities.0.intent_aliases.0', 'member training');
     }
 
     public function test_member_capability_fails_closed_without_a_valid_actor_permit(): void
@@ -149,6 +150,7 @@ final class PublicChatCapabilityTest extends TestCase
                     'title' => 'Book group training',
                     'description' => 'Find and book an eligible group training.',
                     'audience' => 'member',
+                    'intent_aliases' => ['member training', 'Gruppentraining buchen'],
                     'query_tool' => [
                         'name' => 'aoss_member_training_options',
                         'description' => 'Return eligible member training options.',
