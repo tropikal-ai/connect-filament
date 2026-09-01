@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Translate the signed Connect challenge envelope into the browser challenge contract so public booking confirmation can complete.
 - Add the first-party human-verification challenge route and require a site-, session-, and action-bound proof before forwarding public booking confirmations.
 - Strip browser proof and verification fields from signed action decisions; fail closed with safe typed verification errors while keeping cancellation proof-free.
 - Remove the unused remote-IP field from the signed proof-verification contract; proof remains bound to site, session, and action.

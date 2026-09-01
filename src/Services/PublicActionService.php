@@ -37,7 +37,22 @@ final class PublicActionService
             return $this->verificationUnavailable();
         }
 
-        return $response;
+        if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
+            return $response;
+        }
+
+        $payload = json_decode((string) $response->getContent(), true);
+        $challenge = is_array($payload)
+            && ($payload['_tropikal_connect'] ?? null) === true
+            && is_array($payload['data']['challenge'] ?? null)
+                ? $payload['data']['challenge']
+                : null;
+        if ($challenge === null) {
+            return $this->verificationUnavailable();
+        }
+
+        return response()->json(['challenge' => $challenge])
+            ->header('Cache-Control', 'no-store');
     }
 
     /**

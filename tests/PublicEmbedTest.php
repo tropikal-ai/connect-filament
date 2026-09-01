@@ -229,7 +229,12 @@ class PublicEmbedTest extends TestCase
             'session_id' => 'embed_session_123',
             'action_id' => $action,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-        Http::fake(['*' => Http::response(['challenge' => ['seed' => 'seed-1', 'bits' => 18]])]);
+        Http::fake(['*' => Http::response([
+            'schema' => 'connect.public.human_verification_challenge',
+            'contract_version' => '1.0',
+            '_tropikal_connect' => true,
+            'data' => ['challenge' => ['seed' => 'seed-1', 'bits' => 18]],
+        ])]);
 
         $this->postJson('/tropikal-connect/api/human-verification/challenge', [
             'session_id' => 'embed_session_123',
