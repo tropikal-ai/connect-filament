@@ -50,12 +50,14 @@ final class PublicChatCapabilityRegistry
         $title = trim((string) ($capability['title'] ?? ''));
         $description = trim((string) ($capability['description'] ?? ''));
         $audience = (string) ($capability['audience'] ?? '');
+        $intentAliases = $this->validateIntentAliases($capability['intent_aliases'] ?? []);
         $query = $capability['query_tool'] ?? null;
         if (
             preg_match(self::KIND_PATTERN, $kind) !== 1
             || $title === '' || strlen($title) > 120
             || $description === '' || strlen($description) > 500
             || ! in_array($audience, ['public', 'member'], true)
+            || $intentAliases === null
             || ! is_array($query)
             || preg_match('/\A[a-z][a-z0-9_]{2,63}\z/', (string) ($query['name'] ?? '')) !== 1
             || ! is_string($query['description'] ?? null)
@@ -72,6 +74,7 @@ final class PublicChatCapabilityRegistry
             'description' => $description,
             'audience' => $audience,
             'enabled_by_default' => ($capability['enabled_by_default'] ?? true) === true,
+            ...($intentAliases === [] ? [] : ['intent_aliases' => $intentAliases]),
             'query_tool' => [
                 'name' => (string) $query['name'],
                 'description' => substr((string) $query['description'], 0, 500),
@@ -80,6 +83,35 @@ final class PublicChatCapabilityRegistry
             'proposal_input_schema' => $capability['proposal_input_schema'],
             'execution_input_schema' => $capability['execution_input_schema'],
         ];
+    }
+
+    /** @return array<int, string>|null */
+    private function validateIntentAliases(mixed $value): ?array
+    {
+        if (! is_array($value) || count($value) > 12) {
+            return null;
+        }
+        $aliases = [];
+        $seen = [];
+        foreach ($value as $alias) {
+            if (! is_string($alias)) {
+                return null;
+            }
+            $alias = trim($alias);
+            $normalized = mb_strtolower($alias);
+            if (
+                strlen($alias) < 2
+                || strlen($alias) > 80
+                || preg_match('/[\x00-\x1F\x7F]/', $alias) === 1
+                || isset($seen[$normalized])
+            ) {
+                return null;
+            }
+            $seen[$normalized] = true;
+            $aliases[] = $alias;
+        }
+
+        return $aliases;
     }
 
     public function manifestHash(): string
