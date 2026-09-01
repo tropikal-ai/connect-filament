@@ -16,6 +16,10 @@ use Illuminate\Http\Response;
  */
 final class PublicActionService
 {
+    private const CHALLENGE_SCHEMA = 'connect.public.human_verification_challenge';
+
+    private const CONTRACT_VERSION = '1.0';
+
     private const CHALLENGE_PATH = '/api/connect-filament/public/human-verification/challenge';
 
     private const VERIFY_PATH = '/api/connect-filament/public/human-verification';
@@ -37,7 +41,24 @@ final class PublicActionService
             return $this->verificationUnavailable();
         }
 
-        return $response;
+        if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {
+            return $response;
+        }
+
+        $payload = json_decode((string) $response->getContent(), true);
+        $challenge = is_array($payload)
+            && ($payload['_tropikal_connect'] ?? null) === true
+            && ($payload['schema'] ?? null) === self::CHALLENGE_SCHEMA
+            && ($payload['contract_version'] ?? null) === self::CONTRACT_VERSION
+            && is_array($payload['data']['challenge'] ?? null)
+                ? $payload['data']['challenge']
+                : null;
+        if ($challenge === null) {
+            return $this->verificationUnavailable();
+        }
+
+        return response()->json(['challenge' => $challenge])
+            ->header('Cache-Control', 'no-store');
     }
 
     /**
