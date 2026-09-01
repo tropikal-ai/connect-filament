@@ -263,6 +263,33 @@ class PublicEmbedTest extends TestCase
         });
     }
 
+    public function test_human_verification_challenge_rejects_incompatible_success_envelopes(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $valid = [
+            'schema' => 'connect.public.human_verification_challenge',
+            'contract_version' => '1.0',
+            '_tropikal_connect' => true,
+            'data' => ['challenge' => ['seed' => 'seed-1', 'bits' => 18]],
+        ];
+
+        foreach ([
+            array_replace($valid, ['schema' => 'connect.unrelated']),
+            array_replace($valid, ['contract_version' => '2.0']),
+            array_replace($valid, ['data' => []]),
+        ] as $payload) {
+            Http::fake(['*' => Http::response($payload)]);
+
+            $this->postJson('/tropikal-connect/api/human-verification/challenge', [
+                'session_id' => 'embed_session_123',
+                'action_id' => '018f1e22-9abc-7def-8123-456789abcdef',
+            ])->assertStatus(503)->assertExactJson([
+                'error' => 'verification_unavailable',
+                'message' => 'Human verification is temporarily unavailable. Please retry.',
+            ]);
+        }
+    }
+
     public function test_confirm_verifies_bound_proof_then_forwards_only_the_decision_contract(): void
     {
         $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
