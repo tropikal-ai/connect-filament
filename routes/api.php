@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
 use TropikalAI\ConnectFilament\Http\Controllers\AssetController;
+use TropikalAI\ConnectFilament\Http\Controllers\PublicChatCapabilityController;
 use TropikalAI\ConnectFilament\Http\Controllers\ResourceController;
 
 Route::put('/assets/{assetRef}/content', [AssetController::class, 'upload'])
@@ -35,4 +36,10 @@ Route::prefix('/installations/{installationId}')
             ->name('connect-filament.api.resources.destroy');
         Route::post('/resources/{resource}/{id}/actions/{action}', [ResourceController::class, 'action'])
             ->name('connect-filament.api.resources.action');
+        Route::post('/public-chat-capabilities/{kind}/{operation}', [PublicChatCapabilityController::class, 'handle'])
+            ->where([
+                'kind' => '[a-z][a-z0-9._-]{2,119}',
+                'operation' => 'query|execute',
+            ])
+            ->name('connect-filament.api.public-chat-capabilities.handle');
     });

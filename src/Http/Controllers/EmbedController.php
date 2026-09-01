@@ -14,9 +14,11 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Cookie;
 use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
+use TropikalAI\ConnectFilament\Contracts\PublicChatActorResolver;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\ControlPlaneClient;
 use TropikalAI\ConnectFilament\Services\PublicActionService;
+use TropikalAI\ConnectFilament\Services\PublicChatActorPermit;
 use TropikalAI\ConnectFilament\Services\UrlPolicy;
 
 class EmbedController extends Controller
@@ -266,6 +268,10 @@ class EmbedController extends Controller
             $query,
             $body,
         );
+        $headers = [
+            ...$headers,
+            ...$this->actorContextHeaders($request, $installation, $body),
+        ];
 
         $client = Http::timeout($this->timeoutSeconds())
             ->acceptJson()
@@ -276,6 +282,34 @@ class EmbedController extends Controller
         return $method === 'POST'
             ? $client->withBody($body, $request->header('Content-Type', 'application/json'))->post($url)
             : $client->get($url);
+    }
+
+    /** @return array<string, string> */
+    private function actorContextHeaders(Request $request, Installation $installation, string $body): array
+    {
+        $payload = json_decode($body, true);
+        $sessionId = is_array($payload) ? trim((string) ($payload['session_id'] ?? '')) : '';
+        if ($sessionId === '' || strlen($sessionId) > 128) {
+            return [];
+        }
+
+        try {
+            $actor = app(PublicChatActorResolver::class)->resolve($request);
+            if ($actor === null) {
+                return [];
+            }
+
+            return [
+                PublicChatActorPermit::HEADER => app(PublicChatActorPermit::class)->issue(
+                    $actor,
+                    $installation,
+                    $sessionId,
+                ),
+                PublicChatActorPermit::SESSION_HEADER => $sessionId,
+            ];
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     private function shouldRepairRegistration(ClientResponse $response): bool

@@ -5,14 +5,48 @@ declare(strict_types=1);
 namespace TropikalAI\ConnectFilament\Tests;
 
 use Illuminate\Http\Client\Request as ClientRequest;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\URL;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
+use TropikalAI\ConnectFilament\Contracts\PublicChatActorResolver;
+use TropikalAI\ConnectFilament\Domain\PublicChatActor;
 use TropikalAI\ConnectFilament\Models\Installation;
+use TropikalAI\ConnectFilament\Services\PublicChatActorPermit;
 
 class PublicEmbedTest extends TestCase
 {
+    public function test_logged_in_actor_is_forwarded_only_as_a_session_bound_opaque_permit(): void
+    {
+        $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $this->app->instance(PublicChatActorResolver::class, new class implements PublicChatActorResolver
+        {
+            public function resolve(Request $request): ?PublicChatActor
+            {
+                return new PublicChatActor('member', '42');
+            }
+        });
+        Http::fake(['*' => Http::response(['status' => 'completed', 'reply' => 'Member chat.'])]);
+
+        $this->postJson('/tropikal-connect/api/chat', [
+            'message' => 'Book my training',
+            'message_id' => 'member-message-1',
+            'session_id' => 'member-session-1',
+        ])->assertOk();
+
+        Http::assertSent(function (ClientRequest $request) use ($installation): bool {
+            $permit = $request->header(PublicChatActorPermit::HEADER)[0] ?? '';
+            $actor = $this->app->make(PublicChatActorPermit::class)
+                ->redeem($permit, $installation, 'member-session-1');
+
+            return $request->header(PublicChatActorPermit::SESSION_HEADER)[0] === 'member-session-1'
+                && $actor?->type === 'member'
+                && $actor?->id === '42'
+                && ! str_contains($request->body(), '42');
+        });
+    }
+
     public function test_complete_public_chat_route_surface_uses_api_middleware(): void
     {
         $routes = [
