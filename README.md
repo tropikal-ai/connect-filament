@@ -110,6 +110,29 @@ Optional discovery configuration:
 
 After connecting, open `TROPIKAL Connect` in Filament and enable only the access needed for each discovered business object. Granted capabilities sync to the private control plane and can be used by website owner chat and automation runtimes through the same capability contract.
 
+## Public Chat Actions
+
+A Website may expose a small, provider-owned action to its public chat without
+granting resource CRUD. Implement `PublicChatCapabilityProvider` for the
+versioned manifests and query/execute handlers. Optionally implement
+`PublicChatActorResolver` when an action requires the Website's logged-in user.
+
+The package registers the interfaces, signs server-to-server requests, issues
+short-lived encrypted actor permits, validates manifests, and makes execution
+idempotent. Manifests declare separate model-facing proposal and canonical
+provider execution schemas; query and execute payloads are rejected at the
+signed boundary when they do not match. The Website still owns authorization and the domain transaction;
+the package contains no booking or customer-specific behavior. After deploying
+a changed manifest, synchronize the existing installation explicitly:
+
+```bash
+php artisan connect-filament:sync
+```
+
+Deployment fails unless App acknowledges the exact protocol, normalized
+manifest hash, and accepted action kinds. Public
+chat actions never fall back to discovered model writes or owner capabilities.
+
 ## Resource Declaration Example
 
 Discovery can be supplemented with explicit resources in `config/connect-filament.php`:

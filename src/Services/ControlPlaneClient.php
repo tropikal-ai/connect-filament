@@ -14,11 +14,14 @@ class ControlPlaneClient
     public function __construct(
         private readonly OAuthClient $oauth,
         private readonly ResourceRegistry $registry,
+        private readonly PublicChatCapabilityRegistry $publicChatCapabilities,
     ) {}
 
     public function registerInstallation(Installation $installation, TokenSet $tokens): array
     {
         $body = $this->post($installation, $this->path('register_path'), $this->installationPayload($installation), $tokens->accessToken);
+        $this->assertPublicChatManifestAccepted($body);
+        unset($body['_public_chat_capabilities_ack']);
         $this->applyRegistrationResponse($installation, $body);
 
         return $body;
@@ -28,6 +31,8 @@ class ControlPlaneClient
     {
         $tokens = $this->oauth->refreshAccessToken($installation);
         $body = $this->post($installation, $this->path('register_path'), $this->installationPayload($installation), $tokens->accessToken);
+        $this->assertPublicChatManifestAccepted($body);
+        unset($body['_public_chat_capabilities_ack']);
         $this->applyRegistrationResponse($installation, $body);
 
         return $body;
@@ -83,6 +88,12 @@ class ControlPlaneClient
         if (! is_array($body)) {
             throw new \RuntimeException('The control plane returned an invalid response.');
         }
+        $acceptedKinds = trim((string) $response->header('X-Tropikal-Public-Chat-Accepted-Kinds'));
+        $body['_public_chat_capabilities_ack'] = [
+            'protocol' => (string) $response->header('X-Tropikal-Public-Chat-Protocol'),
+            'manifest_sha256' => (string) $response->header('X-Tropikal-Public-Chat-Manifest-Sha256'),
+            'accepted_kinds' => $acceptedKinds === '' ? [] : explode(',', $acceptedKinds),
+        ];
 
         return $body;
     }
@@ -96,6 +107,7 @@ class ControlPlaneClient
             'api_base_url' => $this->apiBaseUrl($installation),
             'embed_base_url' => $this->embedBaseUrl($installation),
             'resources' => $resources === [] ? (object) [] : $resources,
+            'public_chat_capabilities' => $this->publicChatCapabilities->manifest(),
         ];
         SensitiveData::assertPublicPayload($payload);
 
@@ -133,6 +145,23 @@ class ControlPlaneClient
                 'website' => $website,
             ],
         ])->save();
+    }
+
+    private function assertPublicChatManifestAccepted(array $body): void
+    {
+        $manifest = $this->publicChatCapabilities->manifest();
+        if ($manifest === []) {
+            return;
+        }
+        $ack = is_array($body['_public_chat_capabilities_ack'] ?? null)
+            ? $body['_public_chat_capabilities_ack']
+            : [];
+        $expectedKinds = array_column($manifest, 'kind');
+        if (($ack['protocol'] ?? null) !== 'public_chat_actions.v1'
+            || ($ack['manifest_sha256'] ?? null) !== $this->publicChatCapabilities->manifestHash()
+            || ($ack['accepted_kinds'] ?? null) !== $expectedKinds) {
+            throw new \RuntimeException('The control plane did not accept the advertised public chat capabilities.');
+        }
     }
 
     private function websiteSettingsFromResponse(array $body): array

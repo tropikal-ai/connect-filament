@@ -80,6 +80,10 @@ return [
         'asset_rewrite_prefixes' => [],
     ],
 
+    'public_chat' => [
+        'actor_permit_ttl_seconds' => (int) env('CONNECT_FILAMENT_ACTOR_PERMIT_TTL_SECONDS', 900),
+    ],
+
     'discovery' => [
         'enabled' => (bool) env('CONNECT_FILAMENT_DISCOVERY_ENABLED', true),
         'model_classes' => [],

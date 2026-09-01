@@ -8,6 +8,9 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Throwable;
 use TropikalAI\ConnectFilament\Console\InstallCommand;
+use TropikalAI\ConnectFilament\Console\SyncCommand;
+use TropikalAI\ConnectFilament\Contracts\PublicChatActorResolver;
+use TropikalAI\ConnectFilament\Contracts\PublicChatCapabilityProvider;
 use TropikalAI\ConnectFilament\Http\Middleware\VerifySignedConnectRequest;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Observers\SharedResourceObserver;
@@ -16,8 +19,12 @@ use TropikalAI\ConnectFilament\Services\ChangeEventDispatcher;
 use TropikalAI\ConnectFilament\Services\EloquentDiscovery;
 use TropikalAI\ConnectFilament\Services\IdempotentMutationExecutor;
 use TropikalAI\ConnectFilament\Services\ImageSanitizer;
+use TropikalAI\ConnectFilament\Services\PublicChatActorPermit;
+use TropikalAI\ConnectFilament\Services\PublicChatCapabilityRegistry;
 use TropikalAI\ConnectFilament\Services\ResourceRegistry;
 use TropikalAI\ConnectFilament\Services\StagedAssetManager;
+use TropikalAI\ConnectFilament\Support\NullPublicChatActorResolver;
+use TropikalAI\ConnectFilament\Support\NullPublicChatCapabilityProvider;
 
 class ConnectFilamentServiceProvider extends ServiceProvider
 {
@@ -29,6 +36,10 @@ class ConnectFilamentServiceProvider extends ServiceProvider
         $this->app->singleton(ImageSanitizer::class);
         $this->app->singleton(StagedAssetManager::class);
         $this->app->singleton(ChangeEventDispatcher::class);
+        $this->app->singleton(PublicChatActorPermit::class);
+        $this->app->singletonIf(PublicChatActorResolver::class, NullPublicChatActorResolver::class);
+        $this->app->singletonIf(PublicChatCapabilityProvider::class, NullPublicChatCapabilityProvider::class);
+        $this->app->singleton(PublicChatCapabilityRegistry::class);
         $this->app->singleton(ResourceRegistry::class, fn ($app): ResourceRegistry => new ResourceRegistry(
             $app['config']->get('connect-filament.resources', []),
             $app->make(EloquentDiscovery::class),
@@ -49,7 +60,7 @@ class ConnectFilamentServiceProvider extends ServiceProvider
         ], 'connect-filament-migrations');
 
         if ($this->app->runningInConsole()) {
-            $this->commands([InstallCommand::class]);
+            $this->commands([InstallCommand::class, SyncCommand::class]);
         }
 
         $this->observeSharedResources();

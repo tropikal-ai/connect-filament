@@ -15,6 +15,7 @@ use Throwable;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\AuditLogger;
 use TropikalAI\ConnectFilament\Services\IdempotentMutationExecutor;
+use TropikalAI\ConnectFilament\Services\PublicChatCapabilityRegistry;
 use TropikalAI\ConnectFilament\Services\ResourceRegistry;
 use TropikalAI\ConnectFilament\Services\StagedAssetManager;
 
@@ -42,10 +43,11 @@ class ResourceController extends Controller
      * waiting for the next push. Unlike schema(), this includes each resource's
      * capabilities and operation input schemas.
      */
-    public function controlPlaneResources(Request $request): JsonResponse
+    public function controlPlaneResources(Request $request, PublicChatCapabilityRegistry $publicChatCapabilities): JsonResponse
     {
         return response()->json([
             'resources' => $this->registry->controlPlaneResourcesFor($this->installation($request)),
+            'public_chat_capabilities' => $publicChatCapabilities->manifest(),
         ]);
     }
 
