@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Cookie;
 use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
+use TropikalAI\Connect\Domain\Security\SignedRequestContext;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\ControlPlaneClient;
 use TropikalAI\ConnectFilament\Services\PublicActionService;
@@ -288,6 +289,25 @@ class EmbedController extends Controller
             $query,
             $body,
         );
+        if ($request->routeIs('connect-filament.embed.chat')) {
+            $payload = json_decode($body, true);
+            $sessionId = is_array($payload) ? (string) ($payload['session_id'] ?? '') : '';
+            // Only an already acknowledged first-party cookie may authorize a
+            // chat. Minting one here would strand an accepted lost response.
+            $token = $request->cookie($this->historyCookieName($request));
+            $context = json_encode([
+                'v' => 1, 'kind' => 'embed-chat',
+                'visitor_history_token' => is_string($token) && preg_match(self::HISTORY_COOKIE_PATTERN, $token) === 1 ? $token : '',
+                // The 0.1 maintenance line has no member actor protocol.
+                'actor_identity' => '',
+                'actor_context_sha256' => hash('sha256', ''),
+                'session_id' => $sessionId,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            $headers = [...$headers, ...SignedRequestContext::headers(
+                (string) $installation->server_signing_key_encrypted,
+                $headers[SignedRequest::SIGNATURE_HEADER], $context,
+            )];
+        }
         $validator = (string) $request->header('If-None-Match', '');
         if ($request->routeIs('connect-filament.embed.chat.info') && $validator !== '' && strlen($validator) <= 1024) {
             $headers['If-None-Match'] = $validator;
@@ -521,15 +541,20 @@ class EmbedController extends Controller
     /** @return array{string, string} */
     private function historyToken(Request $request): array
     {
-        $cookieName = $request->isSecure()
-            ? (string) config('connect-filament.embed.history_cookie', '__Host-tropikal-chat-history')
-            : (string) config('connect-filament.embed.history_cookie_local', 'tropikal-chat-history');
+        $cookieName = $this->historyCookieName($request);
         $token = $request->cookie($cookieName);
         if (! is_string($token) || preg_match(self::HISTORY_COOKIE_PATTERN, $token) !== 1) {
             $token = bin2hex(random_bytes(32));
         }
 
         return [$token, $cookieName];
+    }
+
+    private function historyCookieName(Request $request): string
+    {
+        return $request->isSecure()
+            ? (string) config('connect-filament.embed.history_cookie', '__Host-tropikal-chat-history')
+            : (string) config('connect-filament.embed.history_cookie_local', 'tropikal-chat-history');
     }
 
     private function assertHistoryMutation(Request $request): ?JsonResponse
