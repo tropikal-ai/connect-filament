@@ -66,16 +66,15 @@ optional request-bound `SignedRequestContext` extension, retaining the exact
 legacy body and main signature for older Apps. This explicitly extends the
 former body-only rule. No new cookie is minted during send. Its opaque JSON
 payload is `v:1`, `kind:embed-chat`, `visitor_history_token`, `actor_identity`,
-`actor_context_sha256`, and `session_id`. The actor identity is an
-installation-scoped HMAC of the host-resolved actor type/id; the rotating
-encrypted permit is separately bound by its SHA256 and exact session. No
-browser-submitted context is trusted. The App rejects invalid/partial context
+`actor_context_sha256`, and `session_id`. This 0.1 maintenance line preserves
+its guest-only protocol: actor identity is empty and the permit digest is the
+SHA256 of empty bytes. It does not gain the 0.2 member actor resolver or permit
+feature. No browser-submitted context is trusted. The App rejects invalid/partial context
 and still authorizes the conversation independently. Public info/assets never
 carry the extension; private responses remain no-store and never expose it.
 Both context headers and actor/session headers are private and must be removed
-from access logs. Stable member retries on the new App require a package that
-supports this extension; installation of the two supported package lines must
-precede reliance on that guarantee during rollout.
+from access logs. Stable member retries belong to the 0.2 line; this backport
+keeps its existing Filament 3/Laravel 11–12 and guest capability contracts.
 
 The stable `embed/chat-widget.js` and `embed/iframe.html` proxy paths always
 revalidate the current upstream bytes, then derive validators from the actual
