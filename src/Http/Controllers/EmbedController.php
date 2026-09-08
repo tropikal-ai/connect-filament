@@ -29,7 +29,7 @@ class EmbedController extends Controller
         'iframe.html' => 'text/html; charset=utf-8',
     ];
 
-    private const HASHED_ASSET_PATTERN = '/\A[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*-[A-Za-z0-9_-]{8,}\.(?:js|css)\z/';
+    private const HASHED_ASSET_PATTERN = '/\A(?:[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*-[A-Za-z0-9_-]{8,}\.(?:js|css)|iframe-[a-f0-9]{64}\.html)\z/';
 
     private const HISTORY_COOKIE_PATTERN = '/\A[a-f0-9]{64}\z/';
 
@@ -53,9 +53,11 @@ class EmbedController extends Controller
             abort(404);
         }
 
-        $contentType = str_ends_with($asset, '.css')
-            ? 'text/css; charset=utf-8'
-            : 'application/javascript; charset=utf-8';
+        $contentType = match (pathinfo($asset, PATHINFO_EXTENSION)) {
+            'html' => 'text/html; charset=utf-8',
+            'css' => 'text/css; charset=utf-8',
+            default => 'application/javascript; charset=utf-8',
+        };
 
         return $this->proxyAsset($request, 'assets/'.$asset, $contentType, true);
     }
