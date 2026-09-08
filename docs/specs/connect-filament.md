@@ -48,18 +48,28 @@ Browser-facing embed proxy endpoints are public, tokenless same-origin
 endpoints. They must run through Laravel's `api` middleware, not the `web`
 session stack, because visitor chat is authenticated by a server-to-server
 signed request to the control plane rather than by a Laravel session or CSRF
-token. The public surface is chat info/send/session, anonymous history
+token. The public surface is chat info/bootstrap/send/session, anonymous history
 list/read/delete/clear, and action confirm/cancel. History requests add a
 package-owned 256-bit first-party HttpOnly cookie value only to the signed JSON
 body sent upstream; the browser never sees that raw identifier. History
 deletion also requires an explicit intent header and an exact same-origin
 `Origin` value.
 
+Private bootstrap uses the same signed cookie boundary to mint a short-lived
+write capability without listing conversations. The App runtime invokes it
+only after deliberate chat use. Its response and all private chat/history
+responses remain no-store; a capability is not a transcript-read credential.
+
 The stable `embed/chat-widget.js` and `embed/iframe.html` proxy paths always
-revalidate and preserve provider validators. Only strict fingerprinted
+revalidate the current upstream bytes, then derive validators from the actual
+host-transformed representation. Upstream Last-Modified and pre-transform ETag
+cannot validate those bytes. Only strict fingerprinted
 `embed/assets/<name>-<hash>.js|css` paths are immutable. The proxy forwards no
 browser cookies, authorization, or signing headers upstream and returns only
 safe cache, validator, MIME, and iframe-CSP response headers downstream.
+All three public asset routes use the sessionless API middleware. Their one
+canonical cache policy cannot inherit contradictory upstream no-store/private
+or stale-while-revalidate fields. Fingerprinted bytes are never rewritten.
 
 ## Test Plan
 
