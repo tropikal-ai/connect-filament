@@ -49,7 +49,7 @@ class PublicEmbedTest extends TestCase
             return Http::response(['status' => 'completed', 'reply' => 'Fixture']);
         });
         for ($attempt = 0; $attempt < 2; $attempt++) {
-            $this->withUnencryptedCookie('tropikal-chat-history', str_repeat('a', 64))
+            $this->withCredentials()->withUnencryptedCookie('__Host-tropikal-chat-history', str_repeat('a', 64))
                 ->postJson('/tropikal-connect/api/chat', $body)->assertOk()
                 ->assertDontSee(str_repeat('a', 64));
         }
