@@ -71,6 +71,15 @@ All three public asset routes use the sessionless API middleware. Their one
 canonical cache policy cannot inherit contradictory upstream no-store/private
 or stale-while-revalidate fields. Fingerprinted bytes are never rewritten.
 
+Chat presentation forwards the locale query and bounded If-None-Match header
+to the authoritative signed App read. Shared caching is permitted only for
+App's exact public/no-cache/max-age=0/must-revalidate policy, without cookies,
+and an at-most-4KB JSON body that passes the public secret-field guard. Its
+validator is derived from the exact returned bytes. A valid upstream 304 keeps
+the same policy and validator; malformed/unsafe 304s fail closed. Legacy,
+oversized, contradictory or cookie-bearing responses remain no-store. The
+package does not create a presentation TTL, cached revision, or media store.
+
 ## Test Plan
 
 Orchestra Testbench covers package boot, Filament registration, OAuth setup,

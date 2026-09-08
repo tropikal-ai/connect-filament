@@ -272,7 +272,9 @@ class EmbedController extends Controller
             }
         }
 
-        return $this->proxyResponse($response->body(), $response->status(), $response->header('Content-Type'));
+        return $request->routeIs('connect-filament.embed.chat.info')
+            ? $this->presentationResponse($response)
+            : $this->proxyResponse($response->body(), $response->status(), $response->header('Content-Type'));
     }
 
     private function proxyRequest(Request $request, Installation $installation, string $method, string $path, string $query, string $body): ClientResponse
@@ -286,6 +288,10 @@ class EmbedController extends Controller
             $query,
             $body,
         );
+        $validator = (string) $request->header('If-None-Match', '');
+        if ($request->routeIs('connect-filament.embed.chat.info') && $validator !== '' && strlen($validator) <= 1024) {
+            $headers['If-None-Match'] = $validator;
+        }
 
         $client = Http::timeout($this->timeoutSeconds())
             ->acceptJson()
@@ -330,6 +336,45 @@ class EmbedController extends Controller
 
             return null;
         }
+    }
+
+    private function presentationResponse(ClientResponse $upstream): Response|JsonResponse
+    {
+        $policy = array_map('trim', explode(',', strtolower((string) $upstream->header('Cache-Control'))));
+        sort($policy);
+        $public = $policy === ['max-age=0', 'must-revalidate', 'no-cache', 'public']
+            && ! $upstream->header('Set-Cookie');
+        $etag = (string) $upstream->header('ETag');
+        if ($upstream->status() === 304) {
+            return $public && preg_match('/\A"[a-f0-9]{64}"\z/', $etag) === 1
+                ? response('', 304, ['Cache-Control' => 'public, no-cache, max-age=0, must-revalidate', 'ETag' => $etag])
+                : $this->chatTemporaryUnavailableResponse();
+        }
+        if ($public && $upstream->status() === 200) {
+            $payload = json_decode($upstream->body(), true);
+            try {
+                if (! is_array($payload)) {
+                    throw new \UnexpectedValueException('Invalid presentation.');
+                }
+                // Public presentation has none of the private chat protocol's
+                // token exceptions. Only App's explicit public policy opts in.
+                SensitiveData::assertPublicPayload($payload);
+            } catch (\Throwable) {
+                return $this->chatTemporaryUnavailableResponse();
+            }
+            if (strlen($upstream->body()) <= 4096) {
+                return response($upstream->body(), 200, [
+                    'Content-Type' => 'application/json',
+                    'Cache-Control' => 'public, no-cache, max-age=0, must-revalidate',
+                    'ETag' => '"'.hash('sha256', $upstream->body()).'"',
+                    'X-Content-Type-Options' => 'nosniff',
+                ]);
+            }
+        }
+
+        // Older Apps (and oversized legacy presentations) remain functional,
+        // but never acquire shared-cache permission from this proxy.
+        return $this->proxyResponse($upstream->body(), $upstream->status(), $upstream->header('Content-Type'));
     }
 
     private function proxyResponse(string $body, int $status, ?string $contentType): Response|JsonResponse
