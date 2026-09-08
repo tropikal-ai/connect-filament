@@ -671,7 +671,7 @@ class PublicEmbedTest extends TestCase
         }
     }
 
-    public function test_transformed_iframe_validator_tracks_the_served_representation_and_current_origin(): void
+    public function test_transformed_iframe_validator_tracks_the_served_representation_not_the_upstream_origin(): void
     {
         Http::fake(['*' => Http::response('<script src="./assets/iframe-a1b2c3d4.js"></script>', 200, [
             'ETag' => '"upstream-html"',
@@ -684,14 +684,14 @@ class PublicEmbedTest extends TestCase
             ->assertStatus(304)->assertContent('')->assertHeader('ETag', $validator);
         config()->set('connect-filament.control_plane.base_url', 'https://new-control.example.com');
         $this->get('/tropikal-connect/embed/iframe.html', ['If-None-Match' => $validator])
-            ->assertOk()->assertSee('https://new-control.example.com/embed/assets/', false);
+            ->assertStatus(304)->assertContent('');
         foreach (Http::recorded() as [$request]) {
             $this->assertFalse($request->hasHeader('If-None-Match'));
             $this->assertFalse($request->hasHeader('If-Modified-Since'));
         }
     }
 
-    public function test_iframe_document_loads_content_hashed_assets_directly_from_the_control_plane(): void
+    public function test_iframe_document_keeps_the_module_and_worker_graph_on_its_own_origin(): void
     {
         Http::fake([
             'https://control.example.com/embed/iframe.html' => Http::response(
@@ -704,9 +704,34 @@ class PublicEmbedTest extends TestCase
 
         $response = $this->get('/tropikal-connect/embed/iframe.html')->assertOk();
 
-        $response->assertSee('https://control.example.com/embed/assets/iframe-a1b2c3d4.js', false)
-            ->assertSee('https://control.example.com/embed/assets/iframe-e5f6g7h8.css', false)
+        $response->assertSee('/tropikal-connect/embed/assets/iframe-a1b2c3d4.js', false)
+            ->assertSee('/tropikal-connect/embed/assets/iframe-e5f6g7h8.css', false)
+            ->assertDontSee('https://control.example.com', false)
             ->assertDontSee('./assets/', false);
+    }
+
+    public function test_generated_worker_names_are_immutable_assets_and_remain_retrievable(): void
+    {
+        $body = 'self.onmessage = () => self.postMessage("ready");';
+        Http::fake(['https://control.example.com/embed/assets/proofOfWork.worker-BKtbBPDw.js' => Http::sequence()->push($body, 200, ['ETag' => '"worker"'])
+            ->push('', 304, ['ETag' => '"worker"'])]);
+        $path = '/tropikal-connect/embed/assets/proofOfWork.worker-BKtbBPDw.js';
+        $first = $this->get($path)->assertOk()->assertContent($body)
+            ->assertHeader('Cache-Control', 'immutable, max-age=31536000, public');
+        $this->get($path, ['If-None-Match' => $first->headers->get('ETag')])
+            ->assertStatus(304)->assertContent('');
+        Http::assertSent(fn ($request): bool => $request->hasHeader('If-None-Match', '"worker"'));
+    }
+
+    public function test_generated_graph_uses_the_registered_route_prefix_not_the_legacy_rewrite_prefix(): void
+    {
+        config()->set('connect-filament.route_prefix', 'custom/connect');
+        config()->set('connect-filament.embed.prefix', 'legacy/other');
+        require __DIR__.'/../routes/embed-api.php';
+        Http::fake(['*' => Http::response('<script src="./assets/iframe-a1b2c3d4.js"></script>')]);
+        $this->get('/custom/connect/embed/iframe.html')->assertOk()
+            ->assertSee('src="/custom/connect/embed/assets/iframe-a1b2c3d4.js"', false)
+            ->assertDontSee('legacy/other', false);
     }
 
     public function test_asset_proxy_rejects_flat_mutable_and_unsafe_paths(): void
@@ -718,6 +743,7 @@ class PublicEmbedTest extends TestCase
             '/tropikal-connect/embed/assets/plain.js',
             '/tropikal-connect/embed/assets/../secrets.js',
             '/tropikal-connect/embed/assets/iframe-a1b2c3d4.php',
+            '/tropikal-connect/embed/assets/proof..worker-a1b2c3d4.js',
         ] as $path) {
             $this->get($path)->assertNotFound();
         }
