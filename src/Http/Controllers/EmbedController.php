@@ -62,33 +62,48 @@ class EmbedController extends Controller
         try {
             $client = Http::timeout($this->timeoutSeconds())
                 ->accept($contentType)
-                ->withHeaders(array_filter([
+                ->withHeaders($immutable ? array_filter([
                     'If-None-Match' => $request->header('If-None-Match'),
                     'If-Modified-Since' => $request->header('If-Modified-Since'),
-                ]));
+                ]) : []);
             $response = $client->get($this->assetUrl($asset));
         } catch (\Throwable) {
             return $this->assetUnavailableResponse();
         }
 
-        if (! $response->successful() && $response->status() !== 304) {
+        if ($response->status() !== 200 && ! ($immutable && $response->status() === 304)) {
             return $this->assetUnavailableResponse();
         }
 
         $headers = [
             'Content-Type' => $contentType,
-            'Cache-Control' => $this->safeAssetCacheControl($response, $immutable),
+            'Cache-Control' => $immutable
+                ? 'public, max-age=31536000, immutable'
+                : 'public, no-cache, max-age=0, must-revalidate',
             'X-Content-Type-Options' => 'nosniff',
         ];
-        foreach (['ETag', 'Last-Modified', 'Content-Security-Policy'] as $header) {
+        foreach ($immutable ? ['ETag', 'Last-Modified', 'Content-Security-Policy'] : ['Content-Security-Policy'] as $header) {
             if (is_string($response->header($header)) && $response->header($header) !== '') {
                 $headers[$header] = $response->header($header);
             }
         }
 
-        $body = $response->status() === 304 ? '' : $this->rewriteAssetUrls($asset, $response->body());
+        if ($immutable) {
+            return response($response->status() === 304 ? '' : $response->body(), $response->status(), $headers);
+        }
 
-        return response($body, $response->status(), $headers);
+        // Stable files can be transformed for this host. Always validate the
+        // actual current representation, never the upstream pre-rewrite ETag.
+        $body = $this->rewriteAssetUrls($asset, $response->body());
+        $headers['ETag'] = '"'.hash('sha256', $body).'"';
+        foreach (explode(',', (string) $request->header('If-None-Match', '')) as $candidate) {
+            $candidate = trim($candidate);
+            if ($candidate === '*' || preg_replace('/\AW\//', '', $candidate) === $headers['ETag']) {
+                return response('', 304, $headers);
+            }
+        }
+
+        return response($body, 200, $headers);
     }
 
     public function info(Request $request): JsonResponse
@@ -121,6 +136,11 @@ class EmbedController extends Controller
     public function history(Request $request, ControlPlaneClient $controlPlane): Response|JsonResponse
     {
         return $this->historyProxy($request, $controlPlane, 'list');
+    }
+
+    public function chatBootstrap(Request $request, ControlPlaneClient $controlPlane): Response|JsonResponse
+    {
+        return $this->historyProxy($request, $controlPlane, 'bootstrap');
     }
 
     public function historyRead(Request $request, ControlPlaneClient $controlPlane, string $conversation): Response|JsonResponse
@@ -489,21 +509,6 @@ class EmbedController extends Controller
         ksort($query);
 
         return http_build_query($query, '', '&', PHP_QUERY_RFC3986);
-    }
-
-    private function safeAssetCacheControl(ClientResponse $response, bool $immutable): string
-    {
-        $value = strtolower(trim((string) $response->header('Cache-Control')));
-        if ($immutable && str_contains($value, 'immutable') && str_contains($value, 'max-age=31536000')) {
-            return (string) $response->header('Cache-Control');
-        }
-        if (! $immutable && str_contains($value, 'no-cache') && str_contains($value, 'must-revalidate')) {
-            return (string) $response->header('Cache-Control');
-        }
-
-        return $immutable
-            ? 'public, max-age=31536000, immutable'
-            : 'no-cache, max-age=0, must-revalidate';
     }
 
     private function assetUnavailableResponse(): Response

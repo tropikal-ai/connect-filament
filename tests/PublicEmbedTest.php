@@ -17,6 +17,7 @@ class PublicEmbedTest extends TestCase
     {
         $routes = [
             'connect-filament.embed.chat.info' => ['GET'],
+            'connect-filament.embed.chat.bootstrap' => ['GET'],
             'connect-filament.embed.chat' => ['POST'],
             'connect-filament.embed.chat.session' => ['GET'],
             'connect-filament.embed.chat.history.list' => ['GET'],
@@ -124,6 +125,31 @@ class PublicEmbedTest extends TestCase
         $this->assertSame('lax', strtolower((string) $cookie->getSameSite()));
         $this->assertGreaterThan(now()->addDays(29)->getTimestamp(), $cookie->getExpiresTime());
         $this->assertJsonStringNotEqualsJsonString(json_encode(['visitor_history_token' => $cookie->getValue()]), $response->getContent());
+    }
+
+    public function test_private_bootstrap_mints_the_cookie_without_listing_conversations(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        Http::fake(['*' => Http::response([
+            'history_available' => true,
+            'history_capability' => 'write-only-capability',
+        ])]);
+
+        $response = $this->getJson('/tropikal-connect/api/chat/bootstrap')
+            ->assertOk()
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonPath('history_capability', 'write-only-capability')
+            ->assertJsonMissingPath('items')
+            ->assertJsonMissingPath('visitor_history_token');
+        $cookie = collect($response->headers->getCookies())->first();
+        $this->assertNotNull($cookie);
+        $this->assertTrue($cookie->isHttpOnly());
+        $this->assertTrue($cookie->isSecure());
+        Http::assertSentCount(1);
+        Http::assertSent(fn (ClientRequest $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://control.example.com/api/connect-filament/embed/history/bootstrap'
+            && preg_match('/\A[a-f0-9]{64}\z/', $request['visitor_history_token']) === 1
+        );
     }
 
     public function test_malformed_history_cookie_is_rotated_before_proxying(): void
@@ -501,7 +527,7 @@ class PublicEmbedTest extends TestCase
 
         $stable = $this->get('/tropikal-connect/embed/chat-widget.js')
             ->assertOk()
-            ->assertHeader('ETag', '"loader-1"');
+            ->assertHeader('ETag', '"'.hash('sha256', 'loader').'"');
         $this->assertStringNotContainsString('provider-secret', (string) $stable->headers->get('Set-Cookie'));
         $this->assertStringContainsString('no-cache', (string) $stable->headers->get('Cache-Control'));
         $this->assertStringContainsString('max-age=0', (string) $stable->headers->get('Cache-Control'));
@@ -514,12 +540,52 @@ class PublicEmbedTest extends TestCase
         $this->assertStringContainsString('immutable', (string) $hashed->headers->get('Cache-Control'));
         $this->get('/tropikal-connect/embed/iframe.html')
             ->assertOk()
-            ->assertHeader('Last-Modified', 'Sat, 29 Aug 2026 00:00:00 GMT')
+            ->assertHeaderMissing('Last-Modified')
             ->assertHeader('Content-Security-Policy', "default-src 'none'");
 
         Http::assertSent(fn (ClientRequest $request): bool => ! $request->hasHeader('Cookie')
             && ! $request->hasHeader('Authorization')
             && ! $request->hasHeader(SignedRequest::SIGNATURE_HEADER));
+    }
+
+    public function test_public_assets_are_sessionless_and_have_one_unambiguous_cache_policy(): void
+    {
+        Http::fake(['*' => Http::response('asset', 200, [
+            'Cache-Control' => 'no-store, private, max-age=120, stale-while-revalidate=600, no-cache, must-revalidate',
+            'Set-Cookie' => 'upstream=private',
+        ])]);
+        foreach (['embed.widget', 'embed.asset', 'embed.hashed-asset'] as $name) {
+            $route = Route::getRoutes()->getByName('connect-filament.'.$name);
+            $this->assertContains('api', $route->gatherMiddleware());
+            $this->assertNotContains('web', $route->gatherMiddleware());
+        }
+        foreach (['chat-widget.js', 'iframe.html', 'assets/iframe-a1b2c3d4.js'] as $asset) {
+            $response = $this->get('/tropikal-connect/embed/'.$asset)->assertOk();
+            $this->assertSame([], $response->headers->getCookies());
+            $this->assertSame(str_starts_with($asset, 'assets/')
+                ? 'immutable, max-age=31536000, public'
+                : 'max-age=0, must-revalidate, no-cache, public', $response->headers->get('Cache-Control'));
+        }
+    }
+
+    public function test_transformed_iframe_validator_tracks_the_served_representation_and_current_origin(): void
+    {
+        Http::fake(['*' => Http::response('<script src="./assets/iframe-a1b2c3d4.js"></script>', 200, [
+            'ETag' => '"upstream-html"',
+            'Last-Modified' => 'Sat, 29 Aug 2026 00:00:00 GMT',
+        ])]);
+        $first = $this->get('/tropikal-connect/embed/iframe.html')->assertOk();
+        $validator = '"'.hash('sha256', $first->getContent()).'"';
+        $first->assertHeader('ETag', $validator)->assertHeaderMissing('Last-Modified');
+        $this->get('/tropikal-connect/embed/iframe.html', ['If-None-Match' => 'W/'.$validator])
+            ->assertStatus(304)->assertContent('')->assertHeader('ETag', $validator);
+        config()->set('connect-filament.control_plane.base_url', 'https://new-control.example.com');
+        $this->get('/tropikal-connect/embed/iframe.html', ['If-None-Match' => $validator])
+            ->assertOk()->assertSee('https://new-control.example.com/embed/assets/', false);
+        foreach (Http::recorded() as [$request]) {
+            $this->assertFalse($request->hasHeader('If-None-Match'));
+            $this->assertFalse($request->hasHeader('If-Modified-Since'));
+        }
     }
 
     public function test_iframe_document_loads_content_hashed_assets_directly_from_the_control_plane(): void
