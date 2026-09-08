@@ -27,7 +27,7 @@ class EmbedController extends Controller
         'iframe.html' => 'text/html; charset=utf-8',
     ];
 
-    private const HASHED_ASSET_PATTERN = '/\A[A-Za-z0-9][A-Za-z0-9_-]*-[A-Za-z0-9_-]{8,}\.(?:js|css)\z/';
+    private const HASHED_ASSET_PATTERN = '/\A[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*-[A-Za-z0-9_-]{8,}\.(?:js|css)\z/';
 
     private const HISTORY_COOKIE_PATTERN = '/\A[a-f0-9]{64}\z/';
 
@@ -514,7 +514,11 @@ class EmbedController extends Controller
     private function rewriteAssetUrls(string $asset, string $body): string
     {
         if ($asset === 'iframe.html') {
-            $body = str_replace('./assets/', $this->assetUrl('assets/'), $body);
+            // Workers resolve relative to import.meta.url and must share the
+            // iframe origin. Use the registered route prefix, not the legacy
+            // body-rewrite prefix (which may intentionally differ).
+            $routePrefix = trim((string) config('connect-filament.route_prefix', 'tropikal-connect'), '/');
+            $body = str_replace('./assets/', '/'.($routePrefix === '' ? '' : $routePrefix.'/').'embed/assets/', $body);
         }
 
         $prefix = '/'.trim((string) config('connect-filament.embed.prefix', 'tropikal-connect'), '/');

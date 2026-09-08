@@ -86,6 +86,12 @@ safe cache, validator, MIME, and iframe-CSP response headers downstream.
 All three public asset routes use the sessionless API middleware. Their one
 canonical cache policy cannot inherit contradictory upstream no-store/private
 or stale-while-revalidate fields. Fingerprinted bytes are never rewritten.
+The iframe's generated module, stylesheet and worker graph stays on its own
+origin through the registered `route_prefix`. Generated dotted basenames such
+as `proofOfWork.worker-<hash>.js` are accepted without permitting path segments,
+empty dot segments, mutable filenames or other extensions. Cross-origin module
+URLs are not a safe shortcut: a worker resolved relative to that module would
+fail the browser's same-origin Worker constructor check even with CORS.
 
 Chat presentation forwards the locale query and bounded If-None-Match header
 to the authoritative signed App read. Shared caching is permitted only for
