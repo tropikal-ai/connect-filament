@@ -698,6 +698,27 @@ class PublicEmbedTest extends TestCase
             ->assertDontSee('./assets/', false);
     }
 
+    public function test_pinned_document_is_not_rewritten_and_retains_immutable_policy(): void
+    {
+        $body = '<script type="module" src="./iframe-a1b2c3d4.js"></script>';
+        $name = 'iframe-'.hash('sha256', $body).'.html';
+        Http::fake(['https://control.example.com/embed/assets/'.$name => Http::sequence()
+            ->push($body, 200, ['ETag' => '"document"', 'Content-Security-Policy' => "default-src 'self'", 'Set-Cookie' => 'private=bad'])
+            ->push('', 304, ['ETag' => '"document"', 'Content-Security-Policy' => "default-src 'self'"])]);
+        $path = '/tropikal-connect/embed/assets/'.$name;
+        $response = $this->get($path)->assertOk()->assertContent($body)
+            ->assertHeader('Content-Type', 'text/html; charset=utf-8')
+            ->assertHeader('Cache-Control', 'immutable, max-age=31536000, public')
+            ->assertHeader('Content-Security-Policy', "default-src 'self'");
+        $this->assertSame([], $response->headers->getCookies());
+        $this->get($path, ['If-None-Match' => '"document"'])->assertStatus(304)->assertContent('');
+        Http::assertSent(fn ($request): bool => $request->hasHeader('If-None-Match', '"document"'));
+        foreach (['iframe-short.html', 'other-'.str_repeat('a', 64).'.html', 'iframe.html'] as $invalid) {
+            $this->get('/tropikal-connect/embed/assets/'.$invalid)->assertNotFound();
+        }
+        Http::assertSentCount(2);
+    }
+
     public function test_generated_worker_names_are_immutable_assets_and_remain_retrievable(): void
     {
         $body = 'self.onmessage = () => self.postMessage("ready");';
