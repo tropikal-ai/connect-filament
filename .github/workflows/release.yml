@@ -1,0 +1,81 @@
+name: Publish package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact version approved by main release intent
+        required: true
+        type: string
+      expected_control_sha:
+        description: Exact protected main commit approving the release intent
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: publish-package
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    if: github.repository == 'tropikal-ai/connect-filament' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      source_sha: ${{ steps.intent.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+      - id: intent
+        uses: tropikal-ai/connect@ab2343ce9c01aa84d5cd9f1dc1aec59c75aca1e5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          mode: resolve
+          control-directory: control
+          version: ${{ inputs.version }}
+
+  quality:
+    needs: resolve
+    uses: tropikal-ai/connect/.github/workflows/php-quality.yml@ab2343ce9c01aa84d5cd9f1dc1aec59c75aca1e5
+    with:
+      checkout-ref: ${{ needs.resolve.outputs.source_sha }}
+
+  publish:
+    needs: [resolve, quality]
+    if: github.repository == 'tropikal-ai/connect-filament' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && needs.resolve.result == 'success' && needs.quality.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+          path: source
+          persist-credentials: false
+      - uses: tropikal-ai/connect@ab2343ce9c01aa84d5cd9f1dc1aec59c75aca1e5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          mode: publish
+          control-directory: control
+          source-directory: source
+          version: ${{ inputs.version }}
+          expected-control-sha: ${{ inputs.expected_control_sha }}
+          resolve-result: ${{ needs.resolve.result }}
+          quality-result: ${{ needs.quality.result }}
+          verified-source-sha: ${{ needs.resolve.outputs.source_sha }}

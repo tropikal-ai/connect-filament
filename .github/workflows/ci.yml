@@ -3,9 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches:
-      - main
-      - "feat/**"
+    branches: [main, maintenance/filament-3, "feat/**"]
   workflow_dispatch:
 
 # A new push supersedes the in-flight run for the same branch/PR.
@@ -16,25 +14,60 @@ concurrency:
 # Least privilege: CI only reads the checkout.
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   # The shared Connect-family quality gate (single source of CI truth).
   # Pinned to an immutable commit; Dependabot proposes the bumps.
   quality:
-    uses: tropikal-ai/connect/.github/workflows/php-quality.yml@c7b27d5da27ffe24fb114b51d3c979d8be43291a
-    with:
-      pre-install: composer config repositories.connect vcs https://github.com/tropikal-ai/connect.git
+    uses: tropikal-ai/connect/.github/workflows/php-quality.yml@ab2343ce9c01aa84d5cd9f1dc1aec59c75aca1e5
 
-  # Single stable check for branch protection: "CI green" fails when any
-  # quality job failed, was cancelled, or was skipped.
+  release-intent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.intent.outputs.matrix }}
+      has_intents: ${{ steps.intent.outputs.has_intents }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+      - id: intent
+        uses: tropikal-ai/connect@ab2343ce9c01aa84d5cd9f1dc1aec59c75aca1e5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          mode: resolve
+          control-directory: control
+
+  approved-payloads:
+    needs: release-intent
+    if: needs.release-intent.outputs.has_intents == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.release-intent.outputs.matrix) }}
+    uses: tropikal-ai/connect/.github/workflows/php-quality.yml@ab2343ce9c01aa84d5cd9f1dc1aec59c75aca1e5
+    with:
+      checkout-ref: ${{ matrix.source_sha }}
+
+  # Stable protection gate: only an explicitly empty intent set can skip the
+  # payload matrix. Ordinary quality and intent validation must always succeed.
   ci:
     name: CI green
     if: always()
-    needs: [quality]
+    needs: [quality, release-intent, approved-payloads]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Fail if any required job did not succeed
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
-        run: exit 1
-      - run: echo "All quality jobs passed."
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Require every applicable owning gate
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          INTENT_RESULT: ${{ needs.release-intent.result }}
+          HAS_INTENTS: ${{ needs.release-intent.outputs.has_intents }}
+          PAYLOAD_RESULT: ${{ needs.approved-payloads.result }}
+        run: bash scripts/check-release-ci.sh
