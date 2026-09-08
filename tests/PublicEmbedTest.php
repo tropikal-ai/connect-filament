@@ -17,6 +17,65 @@ use TropikalAI\ConnectFilament\Services\PublicChatActorPermit;
 
 class PublicEmbedTest extends TestCase
 {
+    public function test_chat_context_authenticates_cookie_and_stable_actor_without_changing_legacy_body(): void
+    {
+        $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $this->app->instance(PublicChatActorResolver::class, new class implements PublicChatActorResolver
+        {
+            public function resolve(Request $request): ?PublicChatActor
+            {
+                return new PublicChatActor('member', '42');
+            }
+        });
+        $contexts = [];
+        $permits = [];
+        $body = ['message' => 'Fixture', 'message_id' => 'same-id', 'session_id' => 'session'];
+        Http::fake(function (ClientRequest $request) use ($installation, &$contexts, &$permits, $body) {
+            $encoded = $request->header('X-Tropikal-Connect-Context')[0] ?? '';
+            $this->assertNotSame('', $encoded);
+            $context = json_decode(base64_decode(strtr($encoded, '-_', '+/')), true, flags: JSON_THROW_ON_ERROR);
+            $proof = hash_hmac('sha256', "connect-context.v1\n".$request->header(SignedRequest::SIGNATURE_HEADER)[0]."\n".$encoded,
+                (string) $installation->server_signing_key_encrypted);
+            $this->assertSame($proof, $request->header('X-Tropikal-Connect-Context-Signature')[0]);
+            $this->assertSame($body, json_decode($request->body(), true));
+            $this->assertSame(str_repeat('a', 64), $context['visitor_history_token']);
+            $permit = $request->header(PublicChatActorPermit::HEADER)[0];
+            $this->assertSame(hash('sha256', $permit), $context['actor_context_sha256']);
+            $this->assertSame('session', $context['session_id']);
+            $this->assertMatchesRegularExpression('/\A[a-f0-9]{64}\z/', $context['actor_identity']);
+            $contexts[] = $context;
+            $permits[] = $permit;
+
+            return Http::response(['status' => 'completed', 'reply' => 'Fixture']);
+        });
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $this->withUnencryptedCookie('tropikal-chat-history', str_repeat('a', 64))
+                ->postJson('/tropikal-connect/api/chat', $body)->assertOk()
+                ->assertDontSee(str_repeat('a', 64));
+        }
+        $this->assertNotSame($permits[0], $permits[1]);
+        $this->assertSame($contexts[0]['actor_identity'], $contexts[1]['actor_identity']);
+    }
+
+    public function test_context_never_creates_an_unacknowledged_cookie_during_chat_or_for_public_info(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        Http::fake(function (ClientRequest $request) {
+            if (str_ends_with($request->url(), '/info')) {
+                $this->assertFalse($request->hasHeader('X-Tropikal-Connect-Context'));
+            } else {
+                $encoded = $request->header('X-Tropikal-Connect-Context')[0] ?? '';
+                $this->assertNotSame('', $encoded);
+                $context = json_decode(base64_decode(strtr($encoded, '-_', '+/')), true, flags: JSON_THROW_ON_ERROR);
+                $this->assertSame('', $context['visitor_history_token']);
+            }
+
+            return Http::response(['reply' => 'Fixture']);
+        });
+        $this->postJson('/tropikal-connect/api/chat', ['message' => 'Fixture', 'session_id' => 'session'])->assertOk();
+        $this->getJson('/tropikal-connect/api/chat/info')->assertOk();
+    }
+
     public function test_logged_in_actor_is_forwarded_only_as_a_session_bound_opaque_permit(): void
     {
         $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);

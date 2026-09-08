@@ -51,7 +51,8 @@ signed request to the control plane rather than by a Laravel session or CSRF
 token. The public surface is chat info/bootstrap/send/session, anonymous history
 list/read/delete/clear, and action confirm/cancel. History requests add a
 package-owned 256-bit first-party HttpOnly cookie value only to the signed JSON
-body sent upstream; the browser never sees that raw identifier. History
+body sent upstream; the browser never sees that raw identifier. The versioned
+chat context below is the sole additional server-to-server transport. History
 deletion also requires an explicit intent header and an exact same-origin
 `Origin` value.
 
@@ -59,6 +60,22 @@ Private bootstrap uses the same signed cookie boundary to mint a short-lived
 write capability without listing conversations. The App runtime invokes it
 only after deliberate chat use. Its response and all private chat/history
 responses remain no-store; a capability is not a transcript-read credential.
+
+Chat forwards an already acknowledged history cookie through Connect Core's
+optional request-bound `SignedRequestContext` extension, retaining the exact
+legacy body and main signature for older Apps. This explicitly extends the
+former body-only rule. No new cookie is minted during send. Its opaque JSON
+payload is `v:1`, `kind:embed-chat`, `visitor_history_token`, `actor_identity`,
+`actor_context_sha256`, and `session_id`. The actor identity is an
+installation-scoped HMAC of the host-resolved actor type/id; the rotating
+encrypted permit is separately bound by its SHA256 and exact session. No
+browser-submitted context is trusted. The App rejects invalid/partial context
+and still authorizes the conversation independently. Public info/assets never
+carry the extension; private responses remain no-store and never expose it.
+Both context headers and actor/session headers are private and must be removed
+from access logs. Stable member retries on the new App require a package that
+supports this extension; installation of the two supported package lines must
+precede reliance on that guarantee during rollout.
 
 The stable `embed/chat-widget.js` and `embed/iframe.html` proxy paths always
 revalidate the current upstream bytes, then derive validators from the actual
