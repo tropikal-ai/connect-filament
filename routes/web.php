@@ -19,15 +19,7 @@ Route::prefix($prefix)
             ->name('oauth.callback');
 
         if ((bool) config('connect-filament.embed.enabled', true)) {
-            Route::get('/embed/widget.js', [EmbedController::class, 'widget'])
-                ->name('embed.widget');
             Route::get('/embed/info', [EmbedController::class, 'info'])
                 ->name('embed.info');
-            Route::get('/embed/{asset}', [EmbedController::class, 'asset'])
-                ->where('asset', 'chat-widget\.js|iframe\.html')
-                ->name('embed.asset');
-            Route::get('/embed/assets/{asset}', [EmbedController::class, 'hashedAsset'])
-                ->where('asset', '[A-Za-z0-9][A-Za-z0-9_-]*-[A-Za-z0-9_-]{8,}\.(?:js|css)')
-                ->name('embed.hashed-asset');
         }
     });

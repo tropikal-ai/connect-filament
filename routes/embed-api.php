@@ -11,8 +11,18 @@ Route::prefix($prefix)
     ->name('connect-filament.')
     ->group(function (): void {
         if ((bool) config('connect-filament.embed.enabled', true)) {
+            Route::get('/embed/widget.js', [EmbedController::class, 'widget'])
+                ->name('embed.widget');
+            Route::get('/embed/{asset}', [EmbedController::class, 'asset'])
+                ->where('asset', 'chat-widget\.js|iframe\.html')
+                ->name('embed.asset');
+            Route::get('/embed/assets/{asset}', [EmbedController::class, 'hashedAsset'])
+                ->where('asset', '(?:[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*-[A-Za-z0-9_-]{8,}\.(?:js|css)|iframe-[a-f0-9]{64}\.html)')
+                ->name('embed.hashed-asset');
             Route::get('/api/chat/info', [EmbedController::class, 'chatInfo'])
                 ->name('embed.chat.info');
+            Route::get('/api/chat/bootstrap', [EmbedController::class, 'chatBootstrap'])
+                ->name('embed.chat.bootstrap');
             Route::post('/api/chat', [EmbedController::class, 'chat'])
                 ->name('embed.chat');
             Route::get('/api/chat/session', [EmbedController::class, 'chatSession'])
