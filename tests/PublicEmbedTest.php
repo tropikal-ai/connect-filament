@@ -135,6 +135,48 @@ class PublicEmbedTest extends TestCase
         });
     }
 
+    public function test_presentation_revalidation_preserves_authoritative_locale_and_byte_validator(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $body = '{"channel_id":"channel-1","installation_id":"install-1","configuration_revision":2,"locale":"de","display_name":"Current"}';
+        $etag = '"'.hash('sha256', $body).'"';
+        $policy = 'public, no-cache, max-age=0, must-revalidate';
+        Http::fake(function (ClientRequest $request) use ($body, $etag, $policy) {
+            $this->assertSame('https://control.example.com/api/connect-filament/embed/info?lang=de', $request->url());
+
+            return $request->hasHeader('If-None-Match', $etag)
+                ? Http::response('', 304, ['Cache-Control' => $policy, 'ETag' => $etag])
+                : Http::response($body, 200, ['Content-Type' => 'application/json', 'Cache-Control' => $policy, 'ETag' => $etag]);
+        });
+        $response = $this->getJson('/tropikal-connect/api/chat/info?lang=de')->assertOk()->assertHeader('ETag', $etag);
+        $this->assertSame('max-age=0, must-revalidate, no-cache, public', $response->headers->get('Cache-Control'));
+        $this->assertSame([], $response->headers->getCookies());
+        $this->getJson('/tropikal-connect/api/chat/info?lang=de', ['If-None-Match' => $etag])
+            ->assertStatus(304)->assertContent('')->assertHeader('ETag', $etag);
+    }
+
+    public function test_presentation_never_shares_legacy_or_credential_bearing_responses(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $responses = Http::sequence();
+        foreach ([
+            ['Cache-Control' => 'no-store'],
+            ['Cache-Control' => 'public, no-cache, max-age=0, must-revalidate, stale-while-revalidate=60'],
+            ['Cache-Control' => 'public, no-cache, max-age=0, must-revalidate', 'Set-Cookie' => 'private=1'],
+        ] as $headers) {
+            $responses->push(['display_name' => 'Legacy'], 200, $headers);
+        }
+        $responses->push(['display_name' => 'Unsafe', 'resume_token' => 'private-token'], 200, [
+            'Cache-Control' => 'public, no-cache, max-age=0, must-revalidate',
+        ]);
+        Http::fake(['*' => $responses]);
+        for ($index = 0; $index < 3; $index++) {
+            $response = $this->getJson('/tropikal-connect/api/chat/info')->assertOk();
+            $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+        }
+        $this->getJson('/tropikal-connect/api/chat/info')->assertStatus(502)->assertDontSee('private-token');
+    }
+
     public function test_history_cookie_is_http_only_secure_host_scoped_and_sliding(): void
     {
         config()->set('session.domain', '.cms.example.com');
