@@ -542,6 +542,34 @@ class PublicEmbedTest extends TestCase
             ->assertDontSee('./assets/', false);
     }
 
+    public function test_content_addressed_iframe_document_is_proxied_immutably_without_transformation(): void
+    {
+        $asset = 'iframe-'.str_repeat('a', 64).'.html';
+        Http::fake([
+            'https://control.example.com/embed/assets/'.$asset => Http::response(
+                '<script type="module" src="./iframe-a1b2c3d4.js"></script>',
+                200,
+                [
+                    'Content-Type' => 'text/html; charset=utf-8',
+                    'Cache-Control' => 'public, max-age=31536000, immutable, no-transform',
+                    'ETag' => '"pinned-document"',
+                    'Content-Security-Policy' => "default-src 'none'",
+                ],
+            ),
+        ]);
+
+        $response = $this->get('/tropikal-connect/embed/assets/'.$asset)
+            ->assertOk()
+            ->assertHeader('Content-Type', 'text/html; charset=utf-8')
+            ->assertHeader('ETag', '"pinned-document"')
+            ->assertHeader('Content-Security-Policy', "default-src 'none'")
+            ->assertSee('./iframe-a1b2c3d4.js', false);
+        $cacheControl = (string) $response->headers->get('Cache-Control');
+        foreach (['public', 'max-age=31536000', 'immutable', 'no-transform'] as $directive) {
+            $this->assertStringContainsString($directive, $cacheControl);
+        }
+    }
+
     public function test_asset_proxy_rejects_flat_mutable_and_unsafe_paths(): void
     {
         Http::fake(['*' => Http::response('must-not-be-used')]);
@@ -551,6 +579,8 @@ class PublicEmbedTest extends TestCase
             '/tropikal-connect/embed/assets/plain.js',
             '/tropikal-connect/embed/assets/../secrets.js',
             '/tropikal-connect/embed/assets/iframe-a1b2c3d4.php',
+            '/tropikal-connect/embed/assets/iframe-'.str_repeat('a', 63).'.html',
+            '/tropikal-connect/embed/assets/iframe-'.str_repeat('A', 64).'.html',
         ] as $path) {
             $this->get($path)->assertNotFound();
         }
