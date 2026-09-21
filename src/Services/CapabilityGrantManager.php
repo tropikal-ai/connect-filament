@@ -51,12 +51,20 @@ class CapabilityGrantManager
      */
     public function sharedSlugs(Installation $installation): array
     {
+        return array_values(array_intersect(
+            array_map('strval', array_keys($this->registry->all())),
+            $this->grantedSlugs($installation),
+        ));
+    }
+
+    public function grantedSlugs(Installation $installation): array
+    {
         $permissions = $installation->resource_permissions ?? [];
 
-        return array_values(array_filter(
-            array_map('strval', array_keys($this->registry->all())),
-            fn (string $slug): bool => is_array($permissions[$slug] ?? null) && $permissions[$slug] !== [],
-        ));
+        return array_values(array_map('strval', array_keys(array_filter(
+            $permissions,
+            fn (mixed $grants): bool => is_array($grants) && $grants !== [],
+        ))));
     }
 
     public function isShared(Installation $installation, string $slug): bool
