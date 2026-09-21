@@ -15,14 +15,37 @@ use TropikalAI\Connect\Domain\Security\SensitiveData;
 
 class EloquentDiscovery
 {
+    private ?array $discoveredResources = null;
+
+    private ?array $modelClassesBySlug = null;
+
+    private ?array $discoverableModelClasses = null;
+
     public function discover(): array
     {
-        if (! (bool) config('connect-filament.discovery.enabled', true)) {
+        return $this->discoveredResources ??= $this->discoverFromSchema();
+    }
+
+    public function modelClassFor(string $slug): ?string
+    {
+        return ($this->modelClassesBySlug ??= $this->mapModelClassesBySlug())[$slug] ?? null;
+    }
+
+    public function forgetDiscoveredResources(): void
+    {
+        $this->discoveredResources = null;
+        $this->modelClassesBySlug = null;
+        $this->discoverableModelClasses = null;
+    }
+
+    private function discoverFromSchema(): array
+    {
+        if (! $this->isEnabled()) {
             return [];
         }
 
         $resources = [];
-        foreach ($this->modelClasses() as $class) {
+        foreach ($this->discoverableModelClasses() as $class) {
             $resource = $this->resourceFor($class);
             if ($resource !== null) {
                 $resources[$resource['slug']] = $resource['definition'];
@@ -71,7 +94,7 @@ class EloquentDiscovery
         // of discover() and takes down every caller — the Filament dashboard
         // and the whole resource API — because one model happens to be named
         // after tokens, keys or secrets. Skip it instead.
-        $slug = Str::of(class_basename($class))->snake()->plural()->toString();
+        $slug = $this->slugFor($class);
         if (SensitiveData::isSensitiveKey($slug)) {
             return null;
         }
@@ -92,6 +115,59 @@ class EloquentDiscovery
                 'discovered' => true,
             ],
         ];
+    }
+
+    private function mapModelClassesBySlug(): array
+    {
+        if (! $this->isEnabled()) {
+            return [];
+        }
+
+        $classesBySlug = [];
+        foreach ($this->discoverableModelClasses() as $class) {
+            $slug = $this->slugFor($class);
+            if (! SensitiveData::isSensitiveKey($slug)) {
+                $classesBySlug[$slug] = $class;
+            }
+        }
+
+        return $classesBySlug;
+    }
+
+    private function discoverableModelClasses(): array
+    {
+        if ($this->discoverableModelClasses !== null) {
+            return $this->discoverableModelClasses;
+        }
+
+        $explicit = array_flip($this->explicitModelClasses());
+        $excluded = array_flip($this->excludedModelClasses());
+        $namespaces = $this->includedNamespaces();
+
+        $classes = [];
+        foreach ($this->modelClasses() as $class) {
+            if (isset($excluded[$class])) {
+                continue;
+            }
+            if (! isset($explicit[$class]) && ! $this->startsWithAnyNamespace($class, $namespaces)) {
+                continue;
+            }
+            if ($this->isConcreteModel($class)) {
+                $classes[] = $class;
+            }
+        }
+
+        return $this->discoverableModelClasses = $classes;
+    }
+
+    private function slugFor(string $class): string
+    {
+        return Str::of(class_basename($class))->snake()->plural()->toString();
+    }
+
+    private function isEnabled(): bool
+    {
+        return (bool) config('connect-filament.discovery.enabled', true);
     }
 
     private function modelClasses(): array
@@ -119,14 +195,19 @@ class EloquentDiscovery
 
     private function isDiscoverableModel(string $class): bool
     {
-        if (in_array($class, (array) config('connect-filament.discovery.excluded_model_classes', []), true)) {
+        if (in_array($class, $this->excludedModelClasses(), true)) {
             return false;
         }
 
-        if (! $this->matchesIncludedNamespace($class) && ! in_array($class, $this->explicitModelClasses(), true)) {
+        if (! $this->startsWithAnyNamespace($class, $this->includedNamespaces()) && ! in_array($class, $this->explicitModelClasses(), true)) {
             return false;
         }
 
+        return $this->isConcreteModel($class);
+    }
+
+    private function isConcreteModel(string $class): bool
+    {
         try {
             if (! class_exists($class) || ! is_subclass_of($class, Model::class)) {
                 return false;
@@ -141,20 +222,16 @@ class EloquentDiscovery
             return false;
         }
 
-        if ($reflection->isAbstract() || $reflection->isInternal()) {
-            return false;
-        }
-
-        return true;
+        return ! $reflection->isAbstract() && ! $reflection->isInternal();
     }
 
-    private function matchesIncludedNamespace(string $class): bool
+    private function includedNamespaces(): array
     {
-        $namespaces = array_filter((array) config('connect-filament.discovery.included_model_namespaces', []));
-        if ($namespaces === []) {
-            return false;
-        }
+        return array_values(array_filter((array) config('connect-filament.discovery.included_model_namespaces', [])));
+    }
 
+    private function startsWithAnyNamespace(string $class, array $namespaces): bool
+    {
         foreach ($namespaces as $namespace) {
             if (str_starts_with($class, (string) $namespace)) {
                 return true;
@@ -162,6 +239,11 @@ class EloquentDiscovery
         }
 
         return false;
+    }
+
+    private function excludedModelClasses(): array
+    {
+        return (array) config('connect-filament.discovery.excluded_model_classes', []);
     }
 
     private function explicitModelClasses(): array
