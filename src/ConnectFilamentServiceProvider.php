@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TropikalAI\ConnectFilament;
 
+use Illuminate\Database\Events\MigrationsEnded;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Throwable;
@@ -63,7 +64,16 @@ class ConnectFilamentServiceProvider extends ServiceProvider
             $this->commands([InstallCommand::class, SyncCommand::class]);
         }
 
+        $this->forgetDiscoveredResourcesAfterMigrating();
         $this->observeSharedResources();
+    }
+
+    private function forgetDiscoveredResourcesAfterMigrating(): void
+    {
+        $this->app['events']->listen(
+            MigrationsEnded::class,
+            fn () => $this->app->make(EloquentDiscovery::class)->forgetDiscoveredResources(),
+        );
     }
 
     /**
@@ -85,8 +95,8 @@ class ConnectFilamentServiceProvider extends ServiceProvider
             $registry = $this->app->make(ResourceRegistry::class);
             $manager = $this->app->make(CapabilityGrantManager::class);
 
-            foreach ($manager->sharedSlugs($installation) as $slug) {
-                $model = $registry->resource($slug)['model'] ?? null;
+            foreach ($manager->grantedSlugs($installation) as $slug) {
+                $model = $registry->modelFor($slug);
                 if (is_string($model) && class_exists($model)) {
                     SharedResourceObserver::listen($model, (string) $slug);
                 }
