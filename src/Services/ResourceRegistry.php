@@ -28,6 +28,17 @@ class ResourceRegistry
         return $this->all()[$slug] ?? null;
     }
 
+    public function modelFor(string $slug): ?string
+    {
+        if (array_key_exists($slug, $this->resources)) {
+            $model = $this->resources[$slug]['model'] ?? null;
+
+            return is_string($model) ? $model : null;
+        }
+
+        return $this->discovery?->modelClassFor($slug);
+    }
+
     public function all(): array
     {
         return [
