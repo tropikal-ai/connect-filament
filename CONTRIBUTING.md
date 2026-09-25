@@ -20,3 +20,10 @@ vendor/bin/phpunit --colors=never
 - Do not add production URLs, private server behavior, token-paste setup, or copied-secret setup.
 - Keep browser/public payload behavior fail-closed.
 - Prefer clear names over comments.
+
+## Publication
+
+Follow [the protected two-line release procedure](docs/releases.md). Package
+source approval, protected-main release intent, exact payload quality and normal
+archive/channel/install proof are separate gates. Do not create workstation tags
+or execute payload scripts in a publication job.
