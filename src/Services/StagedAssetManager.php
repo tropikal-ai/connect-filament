@@ -227,7 +227,8 @@ final class StagedAssetManager
             }
             $image = app($validator)->validate($temporary, $allowedMimeTypes);
             $extensions = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
-            if (($image['mime_type'] ?? null) !== $asset->mime_type
+            if (is_link($temporary) || realpath($temporary) !== $temporary || ! is_file($temporary)
+                || ($image['mime_type'] ?? null) !== $asset->mime_type
                 || ! in_array($image['mime_type'], $allowedMimeTypes, true)
                 || ($extensions[$image['mime_type']] ?? null) !== ($image['extension'] ?? null)
                 || filesize($temporary) !== strlen($bytes)

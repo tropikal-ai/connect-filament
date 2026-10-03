@@ -20,6 +20,7 @@ final class OwnerSourceStagingTest extends TestCase
     {
         parent::setUp();
         ReviewedSourceValidator::$mutate = false;
+        ReviewedSourceValidator::$swapTarget = null;
         Storage::fake('owner_sources');
         config()->set('filesystems.disks.owner_sources.visibility', 'private');
         config()->set('filesystems.disks.owner_sources.driver', 'local');
@@ -202,5 +203,24 @@ final class OwnerSourceStagingTest extends TestCase
         }
         $this->upload($prepared, $bytes)->assertOk();
         $this->assertCount(1, $this->sourceFiles());
+    }
+
+    public function test_validator_cannot_swap_same_bytes_to_an_external_symlink(): void
+    {
+        $owner = $this->connectedInstallation(['allowed_resources' => ['posts'], 'resource_permissions' => ['posts' => ['action:replace']]]);
+        $bytes = $this->bytes();
+        $prepared = $this->prepare($owner, $bytes)->assertCreated();
+        $outside = tempnam(sys_get_temp_dir(), 'owner-source-external-');
+        file_put_contents($outside, $bytes);
+        ReviewedSourceValidator::$swapTarget = $outside;
+        try {
+            $this->upload($prepared, $bytes)->assertStatus(422);
+            $this->assertSame([], $this->sourceFiles());
+            $this->assertSame($bytes, file_get_contents($outside));
+            $this->assertSame(StagedAsset::STATUS_PREPARED, StagedAsset::query()->firstOrFail()->status);
+        } finally {
+            ReviewedSourceValidator::$swapTarget = null;
+            unlink($outside);
+        }
     }
 }

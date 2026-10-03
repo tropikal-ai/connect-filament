@@ -10,6 +10,8 @@ final class ReviewedSourceValidator implements OwnerSourceValidator
 {
     public static bool $mutate = false;
 
+    public static ?string $swapTarget = null;
+
     public function validate(string $absolutePath, array $allowedMimeTypes): array
     {
         $info = @getimagesize($absolutePath);
@@ -19,6 +21,11 @@ final class ReviewedSourceValidator implements OwnerSourceValidator
 
         if (self::$mutate) {
             file_put_contents($absolutePath, 'changed');
+        }
+
+        if (self::$swapTarget !== null) {
+            unlink($absolutePath);
+            symlink(self::$swapTarget, $absolutePath);
         }
 
         return ['mime_type' => $info['mime'], 'extension' => 'png'];
