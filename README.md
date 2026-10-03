@@ -245,3 +245,28 @@ See [`docs/security/threat-model.md`](docs/security/threat-model.md) for the rel
 ## Private Server Boundary
 
 Server and control-plane internals are intentionally absent from this package. Public examples use `example.com` endpoints only.
+
+### Typed owner resource actions
+
+An explicitly configured action may declare `handler` (a container-resolved class
+implementing `Contracts\OwnerResourceAction`) and a closed `input_schema`. Its
+handler receives validated arguments and returns the affected models of that
+resource, at most200. Use this for domain operations such as reordering a selected
+set; the handler still owns row locks, complete expected-revision checks and its
+business rules. It must return every changed record for the site's audit.
+
+The supported argument shapes are bounded scalar fields, lists with item schemas
+(up to200 items), closed nested objects, and bounded maps with a property-name
+pattern and value schema. Validation is strict about JSON scalar types, unknown
+keys, bounds and duplicate list entries when `uniqueItems` is declared. Inputs are
+limited to64KiB and nesting depth5. This reuses pure schema validation; public-chat
+actor authorization is not involved.
+
+Only installations granted `action:<name>` discover and execute the typed action.
+The catalog exposes its argument schema and always requires owner confirmation;
+server handler names never leave the site. Execution uses the signed installation
+route `/resources/{resource}/actions/{action}`, requires an idempotency key and
+runs inside the existing durable mutation transaction. Responses and receipt
+replay apply current per-field grants to every returned record. Existing
+zero-argument record actions retain their original route and do not fall through
+to this endpoint.

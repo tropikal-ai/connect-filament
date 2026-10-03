@@ -11,6 +11,7 @@ use TropikalAI\Connect\Domain\Capabilities\CapabilitySet;
 use TropikalAI\Connect\Domain\Capabilities\FieldDescriptor;
 use TropikalAI\Connect\Domain\Capabilities\OperationDescriptor;
 use TropikalAI\Connect\Domain\Resources\ResourceSchema;
+use TropikalAI\ConnectFilament\Contracts\OwnerResourceAction;
 use TropikalAI\ConnectFilament\Domain\FieldSelection;
 use TropikalAI\ConnectFilament\Models\Installation;
 
@@ -49,10 +50,22 @@ class ResourceRegistry
 
     public function schemaFor(Installation $installation): array
     {
-        return $this->schema()->publicSchema(
+        $schema = $this->schema()->publicSchema(
             $installation->allowed_resources ?? [],
             $installation->resource_permissions ?? [],
         );
+        foreach ($schema as $slug => &$resource) {
+            foreach ($resource['actions'] as $name => &$action) {
+                $definition = $this->resource($slug)['actions'][$name] ?? [];
+                if (is_array($definition['input_schema'] ?? null)) {
+                    $action['input_schema'] = $definition['input_schema'];
+                }
+            }
+            unset($action);
+        }
+        unset($resource);
+
+        return $schema;
     }
 
     public function allowedResource(Installation $installation, string $slug): ?array
@@ -166,6 +179,14 @@ class ResourceRegistry
             ]));
         }
 
+        if (array_is_list($data)) {
+            $payload['data'] = array_map(
+                fn (array $record): array => array_intersect_key($record, array_flip($allowed)),
+                $data,
+            );
+
+            return $payload;
+        }
         $narrowed = array_intersect_key($data, array_flip($allowed));
         if (($data['deleted'] ?? false) === true) {
             $narrowed['deleted'] = true;
@@ -351,6 +372,22 @@ class ResourceRegistry
                         'deleted' => ['type' => 'boolean'],
                     ],
                 ],
+                requiresConfirmation: true,
+            );
+        }
+
+        foreach ($resource['actions'] ?? [] as $name => $definition) {
+            if (! in_array('action:'.$name, $permissions, true)
+                || ! is_subclass_of($definition['handler'] ?? '', OwnerResourceAction::class)
+                || ! is_array($definition['input_schema'] ?? null)) {
+                continue;
+            }
+            $operations[] = new OperationDescriptor(
+                name: $slug.'.'.$name,
+                operation: $name,
+                riskLevel: ($definition['risk_level'] ?? '') === 'destructive' ? 'destructive' : 'write',
+                inputSchema: $definition['input_schema'],
+                outputSchema: ['type' => 'object', 'properties' => ['data' => ['type' => 'array']]],
                 requiresConfirmation: true,
             );
         }
