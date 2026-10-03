@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace TropikalAI\ConnectFilament\Services;
 
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use TropikalAI\ConnectFilament\Contracts\OwnerSourceValidator;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Models\StagedAsset;
 
@@ -95,7 +97,25 @@ final class StagedAssetManager
             abort(410, 'Upload capability expired.');
         }
 
-        $bytes = $request->getContent();
+        $installation = $asset->installation;
+        $registry = app(ResourceRegistry::class);
+        if (! $installation || $installation->status !== Installation::STATUS_CONNECTED
+            || ! $registry->allowsAssetPreparation($installation, (string) $asset->resource_slug, (string) $asset->field_name)) {
+            abort(403, 'Asset field is no longer allowed for this installation.');
+        }
+        $contentLength = $request->header('Content-Length');
+        if ($contentLength !== null && (! ctype_digit($contentLength) || (int) $contentLength !== (int) $asset->size_bytes)) {
+            abort(422, 'Uploaded bytes do not match the prepared asset.');
+        }
+        $maxBytes = (int) config('connect-filament.assets.max_bytes', 5 * 1024 * 1024);
+        if ((int) $asset->size_bytes < 1 || (int) $asset->size_bytes > $maxBytes) {
+            throw new HttpResponseException(response()->json(['error' => 'Prepared upload exceeds its byte budget.'], 422));
+        }
+        $input = $request->getContent(true);
+        $bytes = stream_get_contents($input, (int) $asset->size_bytes + 1);
+        if (! is_string($bytes)) {
+            throw new HttpResponseException(response()->json(['error' => 'Uploaded bytes are unavailable.'], 422));
+        }
         if ($asset->status === StagedAsset::STATUS_STAGED) {
             if (hash_equals((string) $asset->input_sha256, hash('sha256', $bytes))) {
                 return $asset;
@@ -120,6 +140,10 @@ final class StagedAssetManager
             abort(422, 'Uploaded image is too large.');
         }
 
+        if (isset($settings['source_validator'])) {
+            return $this->storePrivateSource($asset, $bytes, $settings, $allowedMimeTypes);
+        }
+
         try {
             $image = $this->images->sanitize($bytes, $allowedMimeTypes);
         } catch (\InvalidArgumentException $exception) {
@@ -142,6 +166,106 @@ final class StagedAssetManager
         ])->save();
 
         return $asset;
+    }
+
+    private function storePrivateSource(StagedAsset $asset, string $bytes, array $settings, array $allowedMimeTypes): StagedAsset
+    {
+        $validator = $settings['source_validator'];
+        $diskName = (string) $asset->disk;
+        if (! is_string($validator) || ! is_subclass_of($validator, OwnerSourceValidator::class)
+            || config('filesystems.disks.'.$diskName.'.driver') !== 'local'
+            || config('filesystems.disks.'.$diskName.'.visibility') !== 'private') {
+            throw new HttpResponseException(response()->json(['error' => 'Private original storage is unavailable.'], 422));
+        }
+        $disk = Storage::disk($diskName);
+        $root = rtrim($disk->path(''), DIRECTORY_SEPARATOR);
+        $temporary = null;
+        $lock = null;
+        try {
+            if (is_link($root) || (! is_dir($root) && ! mkdir($root, 0700, true))) {
+                throw new \RuntimeException('Unsafe source root.');
+            }
+            $root = realpath($root);
+            if ($root === false || ! preg_match('#^[A-Za-z0-9][A-Za-z0-9/_-]*$#', (string) $asset->directory)) {
+                throw new \RuntimeException('Invalid source directory.');
+            }
+            $directory = $root;
+            foreach (explode('/', (string) $asset->directory) as $part) {
+                $directory .= '/'.$part;
+                if (is_link($directory) || (! is_dir($directory) && ! mkdir($directory, 0700))) {
+                    throw new \RuntimeException('Unsafe source directory.');
+                }
+            }
+            if (! preg_match('/^cfa_[A-Za-z0-9]{1,120}$/', (string) $asset->public_id)) {
+                throw new \RuntimeException('Invalid staged source identity.');
+            }
+            $locks = $root.'/.owner-source-locks';
+            if (is_link($locks) || (! is_dir($locks) && ! mkdir($locks, 0700))) {
+                throw new \RuntimeException('Source lock storage is unavailable.');
+            }
+            $lockPath = $locks.'/'.$asset->public_id.'.lock';
+            if (is_link($lockPath)) {
+                throw new \RuntimeException('Unsafe source lock.');
+            }
+            $lock = fopen($lockPath, 'c');
+            if ($lock === false || ! chmod($lockPath, 0600) || ! flock($lock, LOCK_EX | LOCK_NB)) {
+                throw new \RuntimeException('This source upload is already being handled.');
+            }
+            $id = (string) Str::uuid();
+            $temporary = $directory.'/'.$id.'.part';
+            $handle = fopen($temporary, 'xb');
+            if ($handle === false) {
+                throw new \RuntimeException('Source staging failed.');
+            }
+            try {
+                if (! chmod($temporary, 0600) || fwrite($handle, $bytes) !== strlen($bytes)
+                    || ! fflush($handle) || ! fsync($handle)) {
+                    throw new \RuntimeException('Source staging failed.');
+                }
+            } finally {
+                fclose($handle);
+            }
+            $image = app($validator)->validate($temporary, $allowedMimeTypes);
+            $extensions = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+            if (($image['mime_type'] ?? null) !== $asset->mime_type
+                || ! in_array($image['mime_type'], $allowedMimeTypes, true)
+                || ($extensions[$image['mime_type']] ?? null) !== ($image['extension'] ?? null)
+                || filesize($temporary) !== strlen($bytes)
+                || ! hash_equals((string) $asset->input_sha256, hash_file('sha256', $temporary))) {
+                throw new \RuntimeException('Original validation changed its identity.');
+            }
+            // The prepared row owns this stable filename even if its final DB
+            // save rolls back. Repeated upload reuses one verified private file.
+            $path = $asset->directory.'/'.$asset->public_id.'.'.$image['extension'];
+            $target = $disk->path($path);
+            if (is_link($target)) {
+                throw new \RuntimeException('Unsafe source target.');
+            }
+            if (is_file($target) && filesize($target) === strlen($bytes)
+                && hash_equals((string) $asset->input_sha256, hash_file('sha256', $target))) {
+                unlink($temporary);
+            } elseif (! rename($temporary, $target)) {
+                throw new \RuntimeException('Source publication failed.');
+            }
+            $temporary = null;
+            $asset->forceFill([
+                'status' => StagedAsset::STATUS_STAGED, 'stored_path' => $path,
+                'stored_sha256' => $asset->input_sha256, 'uploaded_at' => now(),
+            ])->save();
+
+            return $asset;
+        } catch (\Throwable $exception) {
+            report($exception);
+            throw new HttpResponseException(response()->json(['error' => 'The original could not be safely admitted. Check the source and private storage, then retry.'], 422));
+        } finally {
+            if ($temporary !== null && is_file($temporary)) {
+                unlink($temporary);
+            }
+            if (is_resource($lock)) {
+                flock($lock, LOCK_UN);
+                fclose($lock);
+            }
+        }
     }
 
     public function resolveForMutation(

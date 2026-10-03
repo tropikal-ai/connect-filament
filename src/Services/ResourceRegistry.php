@@ -12,6 +12,7 @@ use TropikalAI\Connect\Domain\Capabilities\FieldDescriptor;
 use TropikalAI\Connect\Domain\Capabilities\OperationDescriptor;
 use TropikalAI\Connect\Domain\Resources\ResourceSchema;
 use TropikalAI\ConnectFilament\Contracts\OwnerResourceAction;
+use TropikalAI\ConnectFilament\Contracts\OwnerSourceValidator;
 use TropikalAI\ConnectFilament\Domain\FieldSelection;
 use TropikalAI\ConnectFilament\Models\Installation;
 
@@ -80,6 +81,33 @@ class ResourceRegistry
     public function allows(Installation $installation, string $slug, string $permission): bool
     {
         return $this->schema()->allows($installation->resource_permissions ?? [], $slug, $permission);
+    }
+
+    public function allowsAssetPreparation(Installation $installation, string $slug, string $field): bool
+    {
+        $resource = $this->allowedResource($installation, $slug);
+        $definition = $resource['fields'][$field] ?? null;
+        if (! is_array($definition) || ($definition['type'] ?? null) !== 'asset'
+            || ($definition['writable'] ?? true) === false) {
+            return false;
+        }
+        $settings = $definition['asset'] ?? [];
+        if (array_key_exists('owner_actions', $settings)) {
+            if (! is_array($settings['owner_actions']) || count($settings['owner_actions']) > 20
+                || ! is_subclass_of($settings['source_validator'] ?? '', OwnerSourceValidator::class)) {
+                return false;
+            }
+            foreach ($settings['owner_actions'] as $action) {
+                if (is_string($action) && is_subclass_of($resource['actions'][$action]['handler'] ?? '', OwnerResourceAction::class)
+                    && $this->allows($installation, $slug, 'action:'.$action)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return $this->allows($installation, $slug, 'create') || $this->allows($installation, $slug, 'update');
     }
 
     public function identifierFor(array $resource): string

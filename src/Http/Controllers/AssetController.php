@@ -45,8 +45,7 @@ final class AssetController extends Controller
             || ! is_array($definition)
             || ($definition['type'] ?? null) !== 'asset'
             || ($definition['writable'] ?? true) === false
-            || ! ($this->registry->allows($installation, $resourceSlug, 'create')
-                || $this->registry->allows($installation, $resourceSlug, 'update'))
+            || ! $this->registry->allowsAssetPreparation($installation, $resourceSlug, $field)
         ) {
             abort(403, 'Asset field is not allowed for this installation.');
         }
