@@ -34,6 +34,8 @@ Route::prefix('/installations/{installationId}')
             ->name('connect-filament.api.resources.update');
         Route::delete('/resources/{resource}/{id}', [ResourceController::class, 'destroy'])
             ->name('connect-filament.api.resources.destroy');
+        Route::post('/resources/{resource}/actions/{action}', [ResourceController::class, 'ownerAction'])
+            ->name('connect-filament.api.resources.owner-action');
         Route::post('/resources/{resource}/{id}/actions/{action}', [ResourceController::class, 'action'])
             ->name('connect-filament.api.resources.action');
         Route::post('/public-chat-capabilities/{kind}/{operation}', [PublicChatCapabilityController::class, 'handle'])

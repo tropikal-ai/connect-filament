@@ -12,10 +12,13 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Validation\ValidationException;
 use Throwable;
+use TropikalAI\ConnectFilament\Contracts\OwnerResourceAction;
+use TropikalAI\ConnectFilament\Domain\MutationIdentity;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\AuditLogger;
 use TropikalAI\ConnectFilament\Services\IdempotentMutationExecutor;
 use TropikalAI\ConnectFilament\Services\PublicChatCapabilityRegistry;
+use TropikalAI\ConnectFilament\Services\PublicChatInputValidator;
 use TropikalAI\ConnectFilament\Services\ResourceRegistry;
 use TropikalAI\ConnectFilament\Services\StagedAssetManager;
 
@@ -248,6 +251,66 @@ class ResourceController extends Controller
         } catch (QueryException $exception) {
             report($exception);
 
+            return $this->resourceMutationError($request, 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->resourceMutationError($request, 500);
+        }
+    }
+
+    public function ownerAction(Request $request): JsonResponse
+    {
+        $action = (string) $request->route('action');
+        [$installation, $slug, $resource] = $this->resourceContext($request, 'action:'.$action);
+        $definition = $resource['actions'][$action] ?? [];
+        $handler = $definition['handler'] ?? '';
+        if (! is_string($handler) || ! is_subclass_of($handler, OwnerResourceAction::class)) {
+            return response()->json(['error' => 'Action not found'], 404);
+        }
+        $input = $request->json()->all();
+        if (strlen($request->getContent()) > 65536 || ! is_array($input)
+            || ! is_array($definition['input_schema'] ?? null)
+            || ! (new PublicChatInputValidator)->accepts($input, $definition['input_schema'])) {
+            return response()->json(['error' => 'Invalid action arguments'], 422);
+        }
+
+        if ((string) $request->header(MutationIdentity::HEADER, '') === '') {
+            return response()->json(['error' => 'idempotency_key_required'], 428);
+        }
+
+        try {
+            return $this->mutations->execute(
+                request: $request,
+                installation: $installation,
+                resourceSlug: $slug,
+                operation: 'action:'.$action,
+                identifier: $this->registry->identifierFor($resource),
+                mutation: function () use ($action, $handler, $input, $installation, $request, $resource, $slug): JsonResponse {
+                    $records = app($handler)->execute($input);
+                    if (! array_is_list($records) || count($records) > 200) {
+                        throw new \RuntimeException('Owner action returned unsupported records.');
+                    }
+                    $data = [];
+                    foreach ($records as $record) {
+                        $model = $resource['model'];
+                        if (! $record instanceof $model || ! $record->exists) {
+                            throw new \RuntimeException('Owner action returned another resource.');
+                        }
+                        $this->audit->record($request, $installation, $slug, $record->getKey(), 'action:'.$action,
+                            ['arguments' => $input, 'after' => $this->registry->project($record, $resource)]);
+                        $data[] = $this->registry->projectFor($installation, $slug, $record, $resource);
+                    }
+
+                    return response()->json(['data' => $data]);
+                },
+                replayPayload: fn ($receipt): array => $this->registry->narrowResponsePayloadFor(
+                    $installation, $slug, $resource, is_array($receipt->response_json) ? $receipt->response_json : [],
+                ),
+            );
+        } catch (UniqueConstraintViolationException $exception) {
+            return $this->resourceConflictError($request, $resource, $exception);
+        } catch (ValidationException $exception) {
             return $this->resourceMutationError($request, 422);
         } catch (Throwable $exception) {
             report($exception);
