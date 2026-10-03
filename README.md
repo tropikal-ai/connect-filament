@@ -275,3 +275,33 @@ Handler validation failures use the controller's authored422 projection;
 uniqueness conflicts use its409 projection; unexpected failures use a generic500
 projection even when debug is enabled. Exceptions unwind the durable transaction,
 so failed handlers do not retain database changes, audit rows or receipts.
+
+
+### Private photographic source staging
+
+A field can opt into an application-owned `OwnerSourceValidator` and a bounded
+`asset.owner_actions` list. Preparation then requires one of those exact declared,
+trusted action grants; generic create/update grants do not substitute. Upload
+rechecks connected installation/resource/field/action authorization, its bearer
+capability, expiry, declared size and SHA. The trusted validator admits a private
+local staged file without transforming it. Source bytes remain identical, including
+photographic ICC/metadata, until the application-owned image lifecycle prepares
+public derivatives. Private visibility, regular contained paths, full synchronized
+staging writes, SHA verification and atomic rename are required. Validator failures
+are redacted and unfinished temporary files are removed. A prepared row owns a
+stable private source filename under its asset reference, guarded by a native
+nonblocking lock. If the final database save fails, one verified original is
+conservatively retained; retry reuses those identical bytes instead of proliferating
+untracked UUID originals. Installation retention/reconciliation must include these
+prepared and committed rows (and expiry/grace), not delete bytes inline after a
+persistence failure. Private visibility is an adapter requirement; the installation
+must also positively bind and verify its physical source root outside its public
+server/static aliases. Existing fields without
+this explicit contract retain the default image sanitizer.
+
+This boundary does not expand the existing upload byte budget (5MiB by default),
+make originals public, enable generic resource writes or replace application image
+admission, generation, retention and publication policy. Larger CMS uploads use the
+site's independently bounded owner workflow. Consume the staged reference through
+`StagedAssetManager::resolveForMutation` inside the durable owner-action transaction;
+its installation/resource/field/status/expiry checks still apply.
