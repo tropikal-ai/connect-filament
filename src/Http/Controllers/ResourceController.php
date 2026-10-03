@@ -279,34 +279,44 @@ class ResourceController extends Controller
             return response()->json(['error' => 'idempotency_key_required'], 428);
         }
 
-        return $this->mutations->execute(
-            request: $request,
-            installation: $installation,
-            resourceSlug: $slug,
-            operation: 'action:'.$action,
-            identifier: $this->registry->identifierFor($resource),
-            mutation: function () use ($action, $handler, $input, $installation, $request, $resource, $slug): JsonResponse {
-                $records = app($handler)->execute($input);
-                if (! array_is_list($records) || count($records) > 200) {
-                    throw new \RuntimeException('Owner action returned unsupported records.');
-                }
-                $data = [];
-                foreach ($records as $record) {
-                    $model = $resource['model'];
-                    if (! $record instanceof $model || ! $record->exists) {
-                        throw new \RuntimeException('Owner action returned another resource.');
+        try {
+            return $this->mutations->execute(
+                request: $request,
+                installation: $installation,
+                resourceSlug: $slug,
+                operation: 'action:'.$action,
+                identifier: $this->registry->identifierFor($resource),
+                mutation: function () use ($action, $handler, $input, $installation, $request, $resource, $slug): JsonResponse {
+                    $records = app($handler)->execute($input);
+                    if (! array_is_list($records) || count($records) > 200) {
+                        throw new \RuntimeException('Owner action returned unsupported records.');
                     }
-                    $this->audit->record($request, $installation, $slug, $record->getKey(), 'action:'.$action,
-                        ['arguments' => $input, 'after' => $this->registry->project($record, $resource)]);
-                    $data[] = $this->registry->projectFor($installation, $slug, $record, $resource);
-                }
+                    $data = [];
+                    foreach ($records as $record) {
+                        $model = $resource['model'];
+                        if (! $record instanceof $model || ! $record->exists) {
+                            throw new \RuntimeException('Owner action returned another resource.');
+                        }
+                        $this->audit->record($request, $installation, $slug, $record->getKey(), 'action:'.$action,
+                            ['arguments' => $input, 'after' => $this->registry->project($record, $resource)]);
+                        $data[] = $this->registry->projectFor($installation, $slug, $record, $resource);
+                    }
 
-                return response()->json(['data' => $data]);
-            },
-            replayPayload: fn ($receipt): array => $this->registry->narrowResponsePayloadFor(
-                $installation, $slug, $resource, is_array($receipt->response_json) ? $receipt->response_json : [],
-            ),
-        );
+                    return response()->json(['data' => $data]);
+                },
+                replayPayload: fn ($receipt): array => $this->registry->narrowResponsePayloadFor(
+                    $installation, $slug, $resource, is_array($receipt->response_json) ? $receipt->response_json : [],
+                ),
+            );
+        } catch (UniqueConstraintViolationException $exception) {
+            return $this->resourceConflictError($request, $resource, $exception);
+        } catch (ValidationException $exception) {
+            return $this->resourceMutationError($request, 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->resourceMutationError($request, 500);
+        }
     }
 
     public function action(Request $request): JsonResponse

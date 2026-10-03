@@ -36,6 +36,7 @@ final class OwnerResourceActionTest extends TestCase
         config()->set('connect-filament.resources.posts.actions.review', $this->declaration());
         config()->set('connect-filament.api.require_idempotency_for_mutations', true);
         ReviewedPostAction::$calls = 0;
+        ReviewedPostAction::$failure = null;
     }
 
     public function test_only_granted_typed_actions_are_discovered_with_confirmation_and_no_handler_leak(): void
@@ -146,5 +147,30 @@ final class OwnerResourceActionTest extends TestCase
         $this->signedJson($installation, 'POST', $legacyPath, [], 'no_legacy_fallthrough')->assertNotFound();
         $this->assertSame(1, ReviewedPostAction::$calls);
         $this->assertSame(1, OperationReceipt::query()->count());
+    }
+
+    public function test_handler_errors_are_redacted_even_in_debug_and_roll_back_changes_and_receipts(): void
+    {
+        $this->configureAction();
+        config()->set('app.debug', true);
+        $post = Post::query()->create(['title' => 'Before', 'body' => 'Private field']);
+        $installation = $this->connectedInstallation([
+            'allowed_resources' => ['posts'], 'resource_permissions' => ['posts' => ['action:review']],
+        ]);
+        $path = "/api/tropikal-connect/installations/{$installation->public_id}/resources/posts/actions/review";
+        $payload = ['ids' => [$post->id], 'expected_revisions' => [$post->id => 1]];
+        foreach (['validation' => 422, 'runtime' => 500] as $failure => $status) {
+            ReviewedPostAction::$failure = $failure;
+            $this->withHeaders([
+                ...$this->sign($installation, 'POST', $path, null, json_encode($payload, JSON_THROW_ON_ERROR), 'failure_'.$failure),
+                'X-Tropikal-Idempotency-Key' => 'review:failure:'.$failure,
+            ])->json('POST', $path, $payload)->assertStatus($status)
+                ->assertDontSee('private-native-source-detail')
+                ->assertJsonPath('error', $status === 422 ? 'Invalid resource data' : 'Resource mutation failed');
+            $this->assertSame('Before', $post->fresh()->title);
+            $this->assertSame(0, OperationReceipt::query()->count());
+            $this->assertSame(0, AuditLog::query()->count());
+        }
+        ReviewedPostAction::$failure = null;
     }
 }

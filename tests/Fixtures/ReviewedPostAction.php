@@ -11,6 +11,8 @@ final class ReviewedPostAction implements OwnerResourceAction
 {
     public static int $calls = 0;
 
+    public static ?string $failure = null;
+
     public function execute(array $arguments): array
     {
         $records = [];
@@ -23,6 +25,13 @@ final class ReviewedPostAction implements OwnerResourceAction
         self::$calls++;
         foreach ($records as $record) {
             $record->update(['title' => 'Reviewed']);
+        }
+
+        if (self::$failure === 'validation') {
+            throw ValidationException::withMessages(['internal' => 'private-native-source-detail']);
+        }
+        if (self::$failure === 'runtime') {
+            throw new \RuntimeException('private-native-source-detail');
         }
 
         return $records;

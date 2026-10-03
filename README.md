@@ -270,3 +270,8 @@ runs inside the existing durable mutation transaction. Responses and receipt
 replay apply current per-field grants to every returned record. Existing
 zero-argument record actions retain their original route and do not fall through
 to this endpoint.
+
+Handler validation failures use the controller's authored422 projection;
+uniqueness conflicts use its409 projection; unexpected failures use a generic500
+projection even when debug is enabled. Exceptions unwind the durable transaction,
+so failed handlers do not retain database changes, audit rows or receipts.
