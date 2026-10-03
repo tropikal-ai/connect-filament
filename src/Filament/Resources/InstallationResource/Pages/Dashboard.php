@@ -24,11 +24,16 @@ class Dashboard extends Page
 
     public array $capabilityGrants = [];
 
+    public array $ownerActionGrants = [];
+
     public function mount(): void
     {
         $this->installation = Installation::query()->first();
         $this->capabilityGrants = $this->installation
             ? app(CapabilityGrantManager::class)->grants($this->installation)
+            : [];
+        $this->ownerActionGrants = $this->installation
+            ? app(CapabilityGrantManager::class)->actionGrants($this->installation)
             : [];
     }
 
@@ -104,6 +109,26 @@ class Dashboard extends Page
     public function status(): array
     {
         return $this->installation?->safeStatus() ?? ['status' => Installation::STATUS_NOT_CONNECTED];
+    }
+
+    public function setOwnerActionGrant(string $slug, string $action, mixed $enabled): void
+    {
+        if (! $this->installation) {
+            return;
+        }
+        $this->installation = app(CapabilityGrantManager::class)->setAction(
+            $this->installation, $slug, $action, filter_var($enabled, FILTER_VALIDATE_BOOL),
+        );
+        if ($this->installation->isConnected()) {
+            app(ControlPlaneClient::class)->syncCapabilities($this->installation);
+        }
+        $this->mount();
+        Notification::make()->title('Capabilities updated')->success()->send();
+    }
+
+    public function ownerActions(string $slug): array
+    {
+        return app(CapabilityGrantManager::class)->ownerActions($slug);
     }
 
     public function discoveredResources(): array
