@@ -263,6 +263,11 @@ limited to64KiB and nesting depth5. This reuses pure schema validation; public-c
 actor authorization is not involved.
 
 Only installations granted `action:<name>` discover and execute the typed action.
+The existing Connect dashboard has an **Owner actions** checkbox for each
+declared typed handler. Each checkbox grants or revokes only that action; it
+does not enable generic create, update, or delete. Read/field changes preserve
+the action choices, and stopping resource sharing revokes them. Legacy model
+method actions are not offered by these controls.
 The catalog exposes its argument schema and always requires owner confirmation;
 server handler names never leave the site. Execution uses the signed installation
 route `/resources/{resource}/actions/{action}`, requires an idempotency key and

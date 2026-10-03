@@ -47,6 +47,7 @@
                         <th class="px-4 py-3 font-medium">Read</th>
                         <th class="px-4 py-3 font-medium">Write</th>
                         <th class="px-4 py-3 font-medium">Delete</th>
+                        <th class="px-4 py-3 font-medium">Owner actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -67,10 +68,18 @@
                             <td class="px-4 py-3">
                                 <input type="checkbox" @checked($capabilityGrants[$slug]['delete'] ?? false) wire:change="setCapabilityGrant('{{ $slug }}', 'delete', $event.target.checked)" />
                             </td>
+                            <td class="px-4 py-3">
+                                @foreach ($this->ownerActions($slug) as $action => $definition)
+                                    <label class="flex items-center gap-2 py-1">
+                                        <input type="checkbox" @checked($ownerActionGrants[$slug][$action] ?? false) wire:change="setOwnerActionGrant('{{ $slug }}', '{{ $action }}', $event.target.checked)" />
+                                        <span>{{ $definition['label'] ?? $action }}</span>
+                                    </label>
+                                @endforeach
+                            </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="py-4 text-gray-500 dark:text-gray-400">No discoverable business objects.</td>
+                            <td colspan="8" class="py-4 text-gray-500 dark:text-gray-400">No discoverable business objects.</td>
                         </tr>
                     @endforelse
                 </tbody>

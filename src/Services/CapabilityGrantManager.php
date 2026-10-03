@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace TropikalAI\ConnectFilament\Services;
 
+use TropikalAI\ConnectFilament\Contracts\OwnerResourceAction;
 use TropikalAI\ConnectFilament\Domain\FieldSelection;
 use TropikalAI\ConnectFilament\Models\Installation;
 
@@ -42,6 +43,50 @@ class CapabilityGrantManager
         }
 
         return $grants;
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    public function ownerActions(string $slug): array
+    {
+        $actions = (array) ($this->registry->resource($slug)['actions'] ?? []);
+        if (count($actions) > 20) {
+            throw new \InvalidArgumentException('A resource can declare at most 20 owner actions.');
+        }
+
+        return array_filter($actions, static fn (mixed $definition, mixed $name): bool => is_string($name) && preg_match('/^[a-z][a-z0-9_]{0,63}$/D', $name) === 1
+            && is_array($definition)
+            && is_subclass_of($definition['handler'] ?? '', OwnerResourceAction::class)
+            && is_array($definition['input_schema'] ?? null), ARRAY_FILTER_USE_BOTH);
+    }
+
+    /** @return array<string, array<string, bool>> */
+    public function actionGrants(Installation $installation): array
+    {
+        $permissions = $installation->resource_permissions ?? [];
+        $grants = [];
+        foreach (array_keys($this->registry->all()) as $slug) {
+            foreach (array_keys($this->ownerActions((string) $slug)) as $action) {
+                $grants[$slug][$action] = in_array('action:'.$action, (array) ($permissions[$slug] ?? []), true);
+            }
+        }
+
+        return $grants;
+    }
+
+    public function setAction(Installation $installation, string $slug, string $action, bool $enabled): Installation
+    {
+        $this->assertDiscoverable($slug);
+        if (! array_key_exists($action, $this->ownerActions($slug))) {
+            throw new \InvalidArgumentException('Only a declared typed owner action can be granted.');
+        }
+        $state = $this->state($installation);
+        $state[$slug] ??= ['read' => false, 'write' => false, 'delete' => false, 'fields' => null, 'actions' => []];
+        $state[$slug]['actions'][$action] = $enabled;
+        if ($state[$slug]['fields'] === null) {
+            $state[$slug]['fields'] = $this->selectableFields($slug);
+        }
+
+        return $this->persist($installation, $state);
     }
 
     /**
@@ -92,6 +137,7 @@ class CapabilityGrantManager
             'write' => in_array('write', $grants, true),
             'delete' => in_array('delete', $grants, true),
             'fields' => $this->selectableFields($slug),
+            'actions' => $this->actionGrants($installation)[$slug] ?? [],
         ];
 
         return $this->persist($installation, $state);
@@ -117,7 +163,7 @@ class CapabilityGrantManager
         $this->assertDiscoverable($slug);
 
         $state = $this->state($installation);
-        $state[$slug] ??= ['read' => false, 'write' => false, 'delete' => false, 'fields' => null];
+        $state[$slug] ??= ['read' => false, 'write' => false, 'delete' => false, 'fields' => null, 'actions' => []];
         $state[$slug][$grant] = $enabled;
 
         // Toggling a permission must never silently re-widen a field selection,
@@ -203,11 +249,12 @@ class CapabilityGrantManager
     }
 
     /**
-     * @return array<string, array{read: bool, write: bool, delete: bool, fields: array<int, string>|null}>
+     * @return array<string, array{read: bool, write: bool, delete: bool, fields: array<int, string>|null, actions: array<string, bool>}>
      */
     private function state(Installation $installation): array
     {
         $permissions = $installation->resource_permissions ?? [];
+        $actions = $this->actionGrants($installation);
 
         $state = [];
         foreach ($this->grants($installation) as $slug => $grants) {
@@ -218,6 +265,7 @@ class CapabilityGrantManager
             $state[(string) $slug] = [
                 ...$grants,
                 'fields' => FieldSelection::fromPermissions($permissions, (string) $slug),
+                'actions' => $actions[$slug] ?? [],
             ];
         }
 
@@ -225,7 +273,7 @@ class CapabilityGrantManager
     }
 
     /**
-     * @param  array<string, array{read: bool, write: bool, delete: bool, fields: array<int, string>|null}>  $state
+     * @param  array<string, array{read: bool, write: bool, delete: bool, fields: array<int, string>|null, actions: array<string, bool>}>  $state
      */
     private function persist(Installation $installation, array $state): Installation
     {
@@ -234,7 +282,7 @@ class CapabilityGrantManager
 
         foreach (array_keys($this->registry->all()) as $slug) {
             $slug = (string) $slug;
-            $resourceState = $state[$slug] ?? ['read' => false, 'write' => false, 'delete' => false, 'fields' => null];
+            $resourceState = $state[$slug] ?? ['read' => false, 'write' => false, 'delete' => false, 'fields' => null, 'actions' => []];
             $grants[$slug] = [
                 'read' => (bool) ($resourceState['read'] ?? false),
                 'write' => (bool) ($resourceState['write'] ?? false),
@@ -250,6 +298,11 @@ class CapabilityGrantManager
             }
             if ($grants[$slug]['delete']) {
                 $resourcePermissions[] = 'delete';
+            }
+            foreach (array_keys($this->ownerActions($slug)) as $action) {
+                if (($resourceState['actions'][$action] ?? false) === true) {
+                    $resourcePermissions[] = 'action:'.$action;
+                }
             }
             if ($resourcePermissions === []) {
                 continue;
