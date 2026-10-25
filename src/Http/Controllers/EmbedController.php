@@ -118,6 +118,11 @@ class EmbedController extends Controller
         return $this->proxy($request, $controlPlane, 'GET', 'session', '');
     }
 
+    public function bootstrap(Request $request, ControlPlaneClient $controlPlane): Response|JsonResponse
+    {
+        return $this->historyProxy($request, $controlPlane, 'bootstrap');
+    }
+
     public function history(Request $request, ControlPlaneClient $controlPlane): Response|JsonResponse
     {
         return $this->historyProxy($request, $controlPlane, 'list');
