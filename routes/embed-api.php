@@ -17,6 +17,8 @@ Route::prefix($prefix)
                 ->name('embed.chat');
             Route::get('/api/chat/session', [EmbedController::class, 'chatSession'])
                 ->name('embed.chat.session');
+            Route::post('/api/chat/bootstrap', [EmbedController::class, 'bootstrap'])
+                ->name('embed.chat.bootstrap');
             Route::get('/api/chat/history', [EmbedController::class, 'history'])
                 ->name('embed.chat.history.list');
             Route::get('/api/chat/history/{conversation}', [EmbedController::class, 'historyRead'])

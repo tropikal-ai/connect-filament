@@ -19,6 +19,7 @@ class PublicEmbedTest extends TestCase
             'connect-filament.embed.chat.info' => ['GET'],
             'connect-filament.embed.chat' => ['POST'],
             'connect-filament.embed.chat.session' => ['GET'],
+            'connect-filament.embed.chat.bootstrap' => ['POST'],
             'connect-filament.embed.chat.history.list' => ['GET'],
             'connect-filament.embed.chat.history.read' => ['GET'],
             'connect-filament.embed.chat.history.delete' => ['DELETE'],
@@ -97,6 +98,47 @@ class PublicEmbedTest extends TestCase
 
             return $request->hasHeader(SignedRequest::REQUEST_ORIGIN_HEADER, 'https://cms.example.com')
                 && hash_equals($expected, $request->header(SignedRequest::SIGNATURE_HEADER)[0]);
+        });
+    }
+
+    public function test_history_bootstrap_signs_only_the_server_derived_visitor_cookie(): void
+    {
+        $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        Http::fake(['*' => Http::response(['history_capability' => 'browser-history-capability'])]);
+
+        $response = $this->postJson('/tropikal-connect/api/chat/bootstrap', [
+            'visitor_history_token' => str_repeat('a', 64),
+        ])->assertOk()->assertJsonPath('history_capability', 'browser-history-capability');
+        $cookie = collect($response->headers->getCookies())->first(
+            fn ($candidate) => $candidate->getName() === '__Host-tropikal-chat-history'
+        );
+        $this->assertNotNull($cookie);
+        $this->assertTrue($cookie->isSecure());
+        $this->assertTrue($cookie->isHttpOnly());
+        $this->assertNull($cookie->getDomain());
+        $this->assertSame('/', $cookie->getPath());
+        $this->assertSame('lax', strtolower((string) $cookie->getSameSite()));
+        $this->assertNotSame(str_repeat('a', 64), $cookie->getValue());
+
+        Http::assertSent(function (ClientRequest $request) use ($installation, $cookie): bool {
+            $payload = json_decode($request->body(), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame(['visitor_history_token' => $cookie->getValue()], $payload);
+            $path = '/api/connect-filament/embed/history/bootstrap';
+            $this->assertSame('https://control.example.com'.$path, $request->url());
+            $this->assertSame('POST', $request->method());
+            $expected = SignedRequest::headersWithRequestOrigin(
+                (string) $installation->server_signing_key_encrypted,
+                (string) $installation->public_id,
+                'POST',
+                $path,
+                'https://cms.example.com',
+                '',
+                $request->body(),
+                (int) $request->header(SignedRequest::TIMESTAMP_HEADER)[0],
+                (string) $request->header(SignedRequest::NONCE_HEADER)[0],
+            );
+
+            return hash_equals($expected[SignedRequest::SIGNATURE_HEADER], $request->header(SignedRequest::SIGNATURE_HEADER)[0]);
         });
     }
 
