@@ -19,7 +19,7 @@ class PublicEmbedTest extends TestCase
             'connect-filament.embed.chat.info' => ['GET'],
             'connect-filament.embed.chat' => ['POST'],
             'connect-filament.embed.chat.session' => ['GET'],
-            'connect-filament.embed.chat.bootstrap' => ['POST'],
+            'connect-filament.embed.chat.bootstrap' => ['GET', 'POST'],
             'connect-filament.embed.chat.history.list' => ['GET'],
             'connect-filament.embed.chat.history.read' => ['GET'],
             'connect-filament.embed.chat.history.delete' => ['DELETE'],
@@ -106,7 +106,7 @@ class PublicEmbedTest extends TestCase
         $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
         Http::fake(['*' => Http::response(['history_capability' => 'browser-history-capability'])]);
 
-        $response = $this->postJson('/tropikal-connect/api/chat/bootstrap', [
+        $response = $this->json('GET', '/tropikal-connect/api/chat/bootstrap', [
             'visitor_history_token' => str_repeat('a', 64),
         ])->assertOk()->assertJsonPath('history_capability', 'browser-history-capability');
         $cookie = collect($response->headers->getCookies())->first(
