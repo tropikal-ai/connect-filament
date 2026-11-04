@@ -85,7 +85,7 @@ class PublicEmbedTest extends TestCase
             return ! $request->hasHeader(PublicChatActorPermit::HEADER)
                 && ! $request->hasHeader(PublicChatActorPermit::SESSION_HEADER)
                 && $context['actor_identity'] === ''
-                && $context['session_id'] === ''
+                && $context['session_id'] === 'guest-session'
                 && $context['actor_context_sha256'] === hash('sha256', '');
         });
     }

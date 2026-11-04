@@ -55,8 +55,9 @@ The connector derives a stable keyed identity from the installation, actor
 type, and actor id, and binds it to the SHA-256 digest of the session-bound
 opaque actor permit. Permit rotation on retries does not change the stable
 identity. Different members, actor types, and installations have different
-identities. Anonymous requests carry empty actor identity/session fields and
-the empty permit's digest. History identity comes only from the valid
+identities. Anonymous requests carry an empty actor identity and the empty
+permit's digest, while the context session always matches the chat body.
+History identity comes only from the valid
 first-party HttpOnly cookie. Browser-supplied identity and proof headers are
 never forwarded. Identity resolution/signing failures return the safe
 temporary-unavailability response without sending an anonymous fallback.

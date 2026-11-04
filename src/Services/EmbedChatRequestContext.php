@@ -51,7 +51,7 @@ final readonly class EmbedChatRequestContext
                 ? $historyToken : '',
             'actor_identity' => $actorIdentity,
             'actor_context_sha256' => hash('sha256', $actorHeaders[PublicChatActorPermit::HEADER] ?? ''),
-            'session_id' => $actorHeaders[PublicChatActorPermit::SESSION_HEADER] ?? '',
+            'session_id' => $sessionId,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
         return [...$actorHeaders, ...SignedRequestContext::headers($secret, $requestSignature, $context)];
