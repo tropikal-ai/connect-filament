@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\URL;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
+use TropikalAI\Connect\Domain\Security\SignedRequestContext;
 use TropikalAI\ConnectFilament\Contracts\PublicChatActorResolver;
 use TropikalAI\ConnectFilament\Domain\PublicChatActor;
 use TropikalAI\ConnectFilament\Models\Installation;
@@ -17,6 +18,146 @@ use TropikalAI\ConnectFilament\Services\PublicChatActorPermit;
 
 class PublicEmbedTest extends TestCase
 {
+    public function test_signed_actor_identity_is_stable_across_rotating_permits_and_bound_to_each_request(): void
+    {
+        $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $this->app->instance(PublicChatActorResolver::class, new class implements PublicChatActorResolver
+        {
+            public function resolve(Request $request): ?PublicChatActor
+            {
+                return new PublicChatActor('member', '42');
+            }
+        });
+        Http::fake(['*' => Http::response(['status' => 'completed', 'reply' => 'Member chat.'])]);
+
+        $body = ['message' => 'Training times', 'message_id' => 'retry-1', 'session_id' => 'member-session-1'];
+        $this->postJson('/tropikal-connect/api/chat', $body)->assertOk();
+        $this->postJson('/tropikal-connect/api/chat', $body)->assertOk();
+
+        $requests = Http::recorded()->map(fn (array $pair): ClientRequest => $pair[0]);
+        $contexts = $requests->map(function (ClientRequest $request) use ($installation): array {
+            $headers = array_map(fn (array $values): string => $values[0], $request->headers());
+            $context = json_decode(SignedRequestContext::verify(
+                (string) $installation->server_signing_key_encrypted,
+                $headers[SignedRequest::SIGNATURE_HEADER],
+                $headers,
+            ), true, flags: JSON_THROW_ON_ERROR);
+            $this->assertSame('embed-chat', $context['kind']);
+            $this->assertSame(1, $context['v']);
+            $this->assertSame('member-session-1', $context['session_id']);
+            $this->assertMatchesRegularExpression('/\A[a-f0-9]{64}\z/', $context['actor_identity']);
+            $this->assertSame(hash('sha256', $headers[PublicChatActorPermit::HEADER]), $context['actor_context_sha256']);
+            $this->assertSame('', $context['visitor_history_token']);
+
+            return $context;
+        });
+        $this->assertSame($contexts[0]['actor_identity'], $contexts[1]['actor_identity']);
+        $this->assertNotSame($requests[0]->header(PublicChatActorPermit::HEADER), $requests[1]->header(PublicChatActorPermit::HEADER));
+
+        $headers = array_map(fn (array $values): string => $values[0], $requests[0]->headers());
+        $this->expectException(\InvalidArgumentException::class);
+        SignedRequestContext::verify(
+            (string) $installation->server_signing_key_encrypted,
+            $requests[1]->header(SignedRequest::SIGNATURE_HEADER)[0],
+            $headers,
+        );
+    }
+
+    public function test_anonymous_context_ignores_browser_supplied_identity_headers(): void
+    {
+        $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        Http::fake(['*' => Http::response(['reply' => 'Hello'])]);
+        $this->withHeaders([
+            PublicChatActorPermit::HEADER => 'forged-permit',
+            PublicChatActorPermit::SESSION_HEADER => 'forged-session',
+            SignedRequestContext::PAYLOAD_HEADER => 'forged-context',
+            SignedRequestContext::PROOF_HEADER => str_repeat('a', 64),
+        ])->postJson('/tropikal-connect/api/chat', ['message' => 'Hello', 'session_id' => 'guest-session'])->assertOk();
+
+        Http::assertSent(function (ClientRequest $request) use ($installation): bool {
+            $headers = array_map(fn (array $values): string => $values[0], $request->headers());
+            $context = json_decode(SignedRequestContext::verify(
+                (string) $installation->server_signing_key_encrypted,
+                $headers[SignedRequest::SIGNATURE_HEADER],
+                $headers,
+            ), true, flags: JSON_THROW_ON_ERROR);
+
+            return ! $request->hasHeader(PublicChatActorPermit::HEADER)
+                && ! $request->hasHeader(PublicChatActorPermit::SESSION_HEADER)
+                && $context['actor_identity'] === ''
+                && $context['session_id'] === ''
+                && $context['actor_context_sha256'] === hash('sha256', '');
+        });
+    }
+
+    public function test_actor_resolution_failure_does_not_silently_send_anonymous_chat(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $this->app->instance(PublicChatActorResolver::class, new class implements PublicChatActorResolver
+        {
+            public function resolve(Request $request): ?PublicChatActor
+            {
+                throw new \RuntimeException('Identity provider unavailable');
+            }
+        });
+        Http::fake();
+        $this->postJson('/tropikal-connect/api/chat', ['message' => 'Hello', 'session_id' => 'member-session'])
+            ->assertStatus(502)->assertJsonPath('error', 'chat_unavailable');
+        Http::assertNothingSent();
+    }
+
+    public function test_actor_identity_is_scoped_to_member_type_and_installation(): void
+    {
+        $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        Http::fake(['*' => Http::response(['reply' => 'Hello'])]);
+        $identities = [];
+        foreach ([['member', '42'], ['member', '43'], ['trainer', '42'], ['member', '42']] as $index => [$type, $id]) {
+            if ($index === 3) {
+                $installation->update(['public_id' => 'installation-other']);
+            }
+            $this->app->instance(PublicChatActorResolver::class, new class($type, $id) implements PublicChatActorResolver
+            {
+                public function __construct(private string $type, private string $id) {}
+
+                public function resolve(Request $request): ?PublicChatActor
+                {
+                    return new PublicChatActor($this->type, $this->id);
+                }
+            });
+            $this->postJson('/tropikal-connect/api/chat', ['message' => 'Hello', 'session_id' => 'session-1'])->assertOk();
+            $request = Http::recorded()->last()[0];
+            $headers = array_map(fn (array $values): string => $values[0], $request->headers());
+            $context = json_decode(SignedRequestContext::verify(
+                (string) $installation->server_signing_key_encrypted,
+                $headers[SignedRequest::SIGNATURE_HEADER],
+                $headers,
+            ), true, flags: JSON_THROW_ON_ERROR);
+            $identities[] = $context['actor_identity'];
+        }
+        $this->assertCount(4, array_unique($identities));
+    }
+
+    public function test_signed_context_uses_only_the_valid_server_read_history_cookie(): void
+    {
+        $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $token = str_repeat('b', 64);
+        Http::fake(['*' => Http::response(['reply' => 'Hello'])]);
+        $this->withCredentials()->withUnencryptedCookie('__Host-tropikal-chat-history', $token)
+            ->postJson('/tropikal-connect/api/chat', ['message' => 'Hello', 'session_id' => 'guest-session'])->assertOk();
+        Http::assertSent(function (ClientRequest $request) use ($installation, $token): bool {
+            $headers = array_map(fn (array $values): string => $values[0], $request->headers());
+            $context = json_decode(SignedRequestContext::verify(
+                (string) $installation->server_signing_key_encrypted,
+                $headers[SignedRequest::SIGNATURE_HEADER],
+                $headers,
+            ), true, flags: JSON_THROW_ON_ERROR);
+
+            return $context['visitor_history_token'] === $token
+                && ! str_contains($request->body(), $token)
+                && ! $request->hasHeader('Cookie');
+        });
+    }
+
     public function test_logged_in_actor_is_forwarded_only_as_a_session_bound_opaque_permit(): void
     {
         $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);

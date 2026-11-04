@@ -44,6 +44,23 @@ All API requests from the private control plane must include a signed assertion 
 
 The package never trusts browser-submitted account metadata and does not decode identity claims as authority. Account metadata comes from the private control plane after token exchange.
 
+Embed requests additionally authenticate an `embed-chat` v1 context through
+Connect Core's `SignedRequestContext` (requires Core 0.1.4 or later). The proof
+binds the context to the already signed request, including its origin, body,
+nonce, and route. Its exact fields are `v`, `kind`, `visitor_history_token`,
+`actor_identity`, `actor_context_sha256`, and `session_id`.
+
+For signed-in chat, the host's `PublicChatActorResolver` supplies the actor.
+The connector derives a stable keyed identity from the installation, actor
+type, and actor id, and binds it to the SHA-256 digest of the session-bound
+opaque actor permit. Permit rotation on retries does not change the stable
+identity. Different members, actor types, and installations have different
+identities. Anonymous requests carry empty actor identity/session fields and
+the empty permit's digest. History identity comes only from the valid
+first-party HttpOnly cookie. Browser-supplied identity and proof headers are
+never forwarded. Identity resolution/signing failures return the safe
+temporary-unavailability response without sending an anonymous fallback.
+
 Browser-facing embed proxy endpoints are public, tokenless same-origin
 endpoints. They must run through Laravel's `api` middleware, not the `web`
 session stack, because visitor chat is authenticated by a server-to-server

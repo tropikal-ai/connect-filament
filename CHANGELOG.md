@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Bind signed-in public chat to a stable installation-scoped actor identity using Connect Core's request-bound signed context; keep rotating actor permits session-bound and fail closed when identity resolution fails.
 - Proxy App-owned content-addressed iframe documents with their immutable, no-transform cache and CSP headers.
 - Add the first-party human-verification challenge route and require a site-, session-, and action-bound proof before forwarding public booking confirmations.
 - Strip browser proof and verification fields from signed action decisions; fail closed with safe typed verification errors while keeping cancellation proof-free.

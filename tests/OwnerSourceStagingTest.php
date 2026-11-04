@@ -175,6 +175,7 @@ final class OwnerSourceStagingTest extends TestCase
         $this->assertSame($bytes, Storage::disk('owner_sources')->get($path));
         $absolute = Storage::disk('owner_sources')->path($path);
         touch($absolute, time() - 120);
+        clearstatcache(true, $absolute);
         $mtime = filemtime($absolute);
         $fail = false;
         $this->upload($prepared, $bytes)->assertOk();
