@@ -181,6 +181,27 @@ final class OAuthSetupTest extends TestCase
         $this->assertNull($installation->fresh()?->oauth_client_id);
     }
 
+    public function test_disconnect_releases_the_local_identity_for_a_different_account(): void
+    {
+        $installation = Installation::query()->create([
+            'status' => Installation::STATUS_CONNECTED,
+            'site_url' => 'https://customer.example',
+            'control_plane_url' => 'https://control.example.com',
+            'account_id' => 'previous-account',
+            'server_signing_key_encrypted' => 'previous-key',
+        ]);
+        $previousId = $installation->public_id;
+
+        $installation->markDisconnected();
+        $installation->refresh();
+
+        $this->assertNotSame($previousId, $installation->public_id);
+        $this->assertMatchesRegularExpression('/^cfi_[A-Za-z0-9]{32}$/', (string) $installation->public_id);
+        $this->assertNull($installation->account_id);
+        $this->assertNull($installation->server_signing_key_encrypted);
+        $this->assertSame(Installation::STATUS_NOT_CONNECTED, $installation->status);
+    }
+
     public function test_oauth_setup_rejects_insecure_nonlocal_endpoints(): void
     {
         $this->withoutExceptionHandling();

@@ -188,6 +188,7 @@ class Installation extends Model
     public function markDisconnected(): void
     {
         $this->forceFill([
+            'public_id' => 'cfi_'.Str::random(32),
             'status' => self::STATUS_NOT_CONNECTED,
             'account_id' => null,
             'account_email' => null,
