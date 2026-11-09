@@ -194,6 +194,7 @@ class PublicEmbedTest extends TestCase
             'connect-filament.embed.chat.info' => ['GET'],
             'connect-filament.embed.chat' => ['POST'],
             'connect-filament.embed.chat.session' => ['GET'],
+            'connect-filament.embed.chat.bootstrap' => ['GET', 'POST'],
             'connect-filament.embed.chat.history.list' => ['GET'],
             'connect-filament.embed.chat.history.read' => ['GET'],
             'connect-filament.embed.chat.history.delete' => ['DELETE'],
@@ -210,6 +211,69 @@ class PublicEmbedTest extends TestCase
             $this->assertContains('api', $route->gatherMiddleware());
             $this->assertNotContains('web', $route->gatherMiddleware());
         }
+    }
+
+    public function test_bootstrap_signs_cookie_derived_identity_for_both_public_methods(): void
+    {
+        $installation = $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $token = str_repeat('b', 64);
+        Http::fake(['*' => Http::response(['items' => [], 'history_capability' => 'write-only-capability'])]);
+
+        foreach (['GET', 'POST'] as $method) {
+            $this->withCredentials()->withUnencryptedCookie('__Host-tropikal-chat-history', $token)
+                ->json($method, '/tropikal-connect/api/chat/bootstrap?lang=de-CH', [
+                    'visitor_history_token' => str_repeat('a', 64),
+                    'conversation_ref' => 'caller-supplied',
+                ], ['X-Embed-Origin' => 'https://cms.example.com'])
+                ->assertOk()
+                ->assertHeader('Cache-Control', 'no-store, private')
+                ->assertJsonPath('history_capability', 'write-only-capability');
+        }
+
+        Http::assertSentCount(2);
+        Http::assertSent(function (ClientRequest $request) use ($installation, $token): bool {
+            $body = json_encode(['visitor_history_token' => $token], JSON_THROW_ON_ERROR);
+            $expected = SignedRequest::headersWithRequestOrigin(
+                (string) $installation->server_signing_key_encrypted,
+                (string) $installation->public_id,
+                'POST',
+                '/api/connect-filament/embed/history/bootstrap',
+                'https://cms.example.com',
+                'lang=de-CH',
+                $body,
+                (int) $request->header(SignedRequest::TIMESTAMP_HEADER)[0],
+                (string) $request->header(SignedRequest::NONCE_HEADER)[0],
+            );
+
+            return $request->method() === 'POST'
+                && $request->url() === 'https://control.example.com/api/connect-filament/embed/history/bootstrap?lang=de-CH'
+                && $request->body() === $body
+                && hash_equals($expected[SignedRequest::SIGNATURE_HEADER], $request->header(SignedRequest::SIGNATURE_HEADER)[0]);
+        });
+    }
+
+    public function test_bootstrap_creates_secure_history_cookie_without_exposing_its_identity(): void
+    {
+        $this->connectedInstallation(['embed_status' => Installation::EMBED_ENABLED]);
+        $sent = null;
+        Http::fake(function (ClientRequest $request) use (&$sent) {
+            $sent = json_decode($request->body(), true, flags: JSON_THROW_ON_ERROR)['visitor_history_token'];
+
+            return Http::response(['items' => [], 'history_capability' => 'write-only-capability']);
+        });
+
+        $response = $this->getJson('/tropikal-connect/api/chat/bootstrap')->assertOk();
+        $cookie = collect($response->headers->getCookies())->first(
+            fn ($candidate) => $candidate->getName() === '__Host-tropikal-chat-history'
+        );
+        $this->assertNotNull($cookie);
+        $this->assertMatchesRegularExpression('/\A[a-f0-9]{64}\z/', (string) $sent);
+        $this->assertSame($sent, $cookie->getValue());
+        $this->assertTrue($cookie->isSecure());
+        $this->assertTrue($cookie->isHttpOnly());
+        $this->assertSame('/', $cookie->getPath());
+        $this->assertNull($cookie->getDomain());
+        $this->assertStringNotContainsString((string) $sent, $response->getContent());
     }
 
     public function test_session_preserves_canonical_query_in_url_and_signature(): void
