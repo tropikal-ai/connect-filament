@@ -15,6 +15,21 @@ use TropikalAI\ConnectFilament\Services\PublicChatCapabilityRegistry;
 
 final class PublicChatCapabilityTest extends TestCase
 {
+    public function test_member_login_hint_only_advertises_a_configured_constant_host_path(): void
+    {
+        $this->bindProvider();
+        $installation = $this->connectedInstallation();
+        $path = "/api/tropikal-connect/installations/{$installation->public_id}/public-chat-capabilities/aoss.member_training.book.v1/query";
+        config()->set('connect-filament.public_chat.member_login_path', '/tropikal-connect/chat-return');
+        $this->signedJson($installation, 'POST', $path, ['input' => ['days' => 14]], 'member_login_path')
+            ->assertUnauthorized()->assertJsonPath('authentication', ['schema' => 'member_login.v1', 'login_path' => '/tropikal-connect/chat-return']);
+        foreach ([null, 'https://evil.invalid', '//evil.invalid', '/login?token=opaque', '/login#fragment'] as $index => $invalid) {
+            config()->set('connect-filament.public_chat.member_login_path', $invalid);
+            $this->signedJson($installation, 'POST', $path, ['input' => ['days' => 14]], 'bad_member_login_'.$index)
+                ->assertUnauthorized()->assertExactJson(['error' => 'member_authentication_required']);
+        }
+    }
+
     public function test_registered_capabilities_are_advertised_and_executed_through_the_signed_boundary(): void
     {
         $this->bindProvider();

@@ -86,6 +86,7 @@ return [
 
     'public_chat' => [
         'actor_permit_ttl_seconds' => (int) env('CONNECT_FILAMENT_ACTOR_PERMIT_TTL_SECONDS', 900),
+        'member_login_path' => null,
     ],
 
     'discovery' => [

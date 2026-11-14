@@ -202,6 +202,9 @@ class PublicEmbedTest extends TestCase
             'connect-filament.embed.human-verification.challenge' => ['POST'],
             'connect-filament.embed.chat.actions.confirm' => ['POST'],
             'connect-filament.embed.chat.actions.cancel' => ['POST'],
+            'connect-filament.embed.chat.actions.status' => ['POST'],
+            'connect-filament.embed.chat.auth-intents' => ['POST'],
+            'connect-filament.embed.chat.auth-intents.resume' => ['POST'],
         ];
 
         foreach ($routes as $name => $methods) {

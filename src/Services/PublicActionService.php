@@ -84,6 +84,15 @@ final class PublicActionService
         );
     }
 
+    /**
+     * @param  array<string, mixed>  $body
+     * @param  callable(string, string): (Response|JsonResponse)  $forward
+     */
+    public function status(string $actionId, array $body, callable $forward): Response|JsonResponse
+    {
+        return $forward(self::ACTION_PATH.'/'.rawurlencode($actionId).'/status', $this->decisionBody($body));
+    }
+
     private function verified(Response|JsonResponse $response): bool
     {
         if ($response->getStatusCode() < 200 || $response->getStatusCode() >= 300) {

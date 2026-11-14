@@ -41,7 +41,7 @@ Route::prefix('/installations/{installationId}')
         Route::post('/public-chat-capabilities/{kind}/{operation}', [PublicChatCapabilityController::class, 'handle'])
             ->where([
                 'kind' => '[a-z][a-z0-9._-]{2,119}',
-                'operation' => 'query|execute',
+                'operation' => 'query|execute|status',
             ])
             ->name('connect-filament.api.public-chat-capabilities.handle');
     });

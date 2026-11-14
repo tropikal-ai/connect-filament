@@ -23,6 +23,7 @@ final class IdempotentMutationExecutor
         string $identifier,
         Closure $mutation,
         ?Closure $replayPayload = null,
+        ?string $authorityContext = null,
     ): JsonResponse {
         $rawKey = (string) $request->header(MutationIdentity::HEADER, '');
         if ($rawKey === '') {
@@ -44,6 +45,7 @@ final class IdempotentMutationExecutor
                 path: $request->path(),
                 query: $request->getQueryString() ?? '',
                 body: $request->getContent() ?: '',
+                authorityContext: $authorityContext,
             );
         } catch (\InvalidArgumentException $exception) {
             return response()->json([
@@ -115,6 +117,43 @@ final class IdempotentMutationExecutor
                 $replayPayload,
             );
         }
+    }
+
+    public function status(Request $request, Installation $installation, string $resourceSlug,
+        string $operation, string $executionPath, string $authorityContext): JsonResponse
+    {
+        try {
+            $identity = MutationIdentity::fromRequestParts(
+                key: (string) $request->header(MutationIdentity::HEADER, ''), operation: $operation,
+                method: 'POST', path: $executionPath, query: $request->getQueryString() ?? '',
+                body: $request->getContent() ?: '', authorityContext: $authorityContext,
+            );
+        } catch (\InvalidArgumentException) {
+            return response()->json(['error' => 'invalid_idempotency_key'], 422);
+        }
+        $receipt = $this->findReceipt($installation, $identity->key, lock: false);
+        if ($receipt === null) {
+            return response()->json(['schema' => 'public-chat-receipt.v1', 'status' => 'unknown',
+                'response_status' => null, 'result' => null, 'operation_receipt' => null]);
+        }
+        if ($receipt->request_hash !== $identity->requestHash || $receipt->operation !== $operation
+            || $receipt->resource_slug !== $resourceSlug) {
+            return response()->json(['error' => 'idempotency_conflict'], 409);
+        }
+        $terminal = in_array($receipt->status, [OperationReceipt::STATUS_COMMITTED, OperationReceipt::STATUS_FAILED_NO_EFFECT], true);
+        $result = [];
+        foreach (['status', 'result_ref', 'error'] as $field) {
+            $value = $receipt->response_json[$field] ?? null;
+            if (is_string($value) && preg_match('/\A[A-Za-z0-9._:-]{1,255}\z/', $value) === 1) {
+                $result[$field] = $value;
+            }
+        }
+
+        return response()->json(['schema' => 'public-chat-receipt.v1', 'status' => $receipt->status,
+            'response_status' => $terminal && $receipt->response_status !== null ? (int) $receipt->response_status : null,
+            'result' => $terminal ? $result : null,
+            'operation_receipt' => ['id' => $receipt->public_id, 'status' => $receipt->status,
+                'result_ref' => $terminal ? ($result['result_ref'] ?? null) : null]]);
     }
 
     private function existingReceiptResponse(

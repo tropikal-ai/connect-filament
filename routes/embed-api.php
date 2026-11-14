@@ -37,5 +37,12 @@ Route::prefix($prefix)
             Route::post('/api/chat/actions/{action}/cancel', [EmbedController::class, 'actionCancel'])
                 ->whereUuid('action')
                 ->name('embed.chat.actions.cancel');
+            Route::post('/api/chat/actions/{action}/status', [EmbedController::class, 'actionStatus'])
+                ->whereUuid('action')
+                ->name('embed.chat.actions.status');
+            Route::post('/api/chat/auth-intents', [EmbedController::class, 'authIntent'])
+                ->name('embed.chat.auth-intents');
+            Route::post('/api/chat/auth-intents/resume', [EmbedController::class, 'authIntentResume'])
+                ->name('embed.chat.auth-intents.resume');
         }
     });
