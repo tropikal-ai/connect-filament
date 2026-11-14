@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 return [
+    'notifications' => [
+        'enabled' => (bool) env('CONNECT_FILAMENT_NOTIFICATIONS_ENABLED', false),
+    ],
+
     'route_prefix' => env('CONNECT_FILAMENT_ROUTE_PREFIX', 'tropikal-connect'),
 
     'filament' => [
