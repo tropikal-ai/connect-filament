@@ -24,12 +24,12 @@ use TropikalAI\ConnectFilament\Services\UrlPolicy;
 
 class EmbedController extends Controller
 {
+    public const HASHED_ASSET_PATTERN = '(?:[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*-[A-Za-z0-9_-]{8,}\.(?:js|css)|iframe-[a-f0-9]{64}\.html)';
+
     private const STABLE_ASSETS = [
         'chat-widget.js' => 'application/javascript; charset=utf-8',
         'iframe.html' => 'text/html; charset=utf-8',
     ];
-
-    private const HASHED_ASSET_PATTERN = '/\A(?:[A-Za-z0-9][A-Za-z0-9_-]*-[A-Za-z0-9_-]{8,}\.(?:js|css)|iframe-[a-f0-9]{64}\.html)\z/';
 
     private const HISTORY_COOKIE_PATTERN = '/\A[a-f0-9]{64}\z/';
 
@@ -49,7 +49,7 @@ class EmbedController extends Controller
 
     public function hashedAsset(Request $request, string $asset): Response
     {
-        if (preg_match(self::HASHED_ASSET_PATTERN, $asset) !== 1) {
+        if (preg_match('/\A'.self::HASHED_ASSET_PATTERN.'\z/', $asset) !== 1) {
             abort(404);
         }
 

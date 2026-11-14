@@ -27,7 +27,7 @@ Route::prefix($prefix)
                 ->where('asset', 'chat-widget\.js|iframe\.html')
                 ->name('embed.asset');
             Route::get('/embed/assets/{asset}', [EmbedController::class, 'hashedAsset'])
-                ->where('asset', '(?:[A-Za-z0-9][A-Za-z0-9_-]*-[A-Za-z0-9_-]{8,}\.(?:js|css)|iframe-[a-f0-9]{64}\.html)')
+                ->where('asset', EmbedController::HASHED_ASSET_PATTERN)
                 ->name('embed.hashed-asset');
         }
     });
