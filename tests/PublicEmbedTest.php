@@ -202,6 +202,9 @@ class PublicEmbedTest extends TestCase
             'connect-filament.embed.human-verification.challenge' => ['POST'],
             'connect-filament.embed.chat.actions.confirm' => ['POST'],
             'connect-filament.embed.chat.actions.cancel' => ['POST'],
+            'connect-filament.embed.chat.actions.status' => ['POST'],
+            'connect-filament.embed.chat.auth-intents' => ['POST'],
+            'connect-filament.embed.chat.auth-intents.resume' => ['POST'],
         ];
 
         foreach ($routes as $name => $methods) {
@@ -773,6 +776,45 @@ class PublicEmbedTest extends TestCase
         foreach (['public', 'max-age=31536000', 'immutable', 'no-transform'] as $directive) {
             $this->assertStringContainsString($directive, $cacheControl);
         }
+    }
+
+    public function test_dotted_generated_proof_of_work_worker_is_served_as_same_origin_javascript(): void
+    {
+        $asset = 'proofOfWork.worker-CNQS26Cp.js';
+        $script = 'self.onmessage = () => self.postMessage({ ready: true });';
+        $csp = "default-src 'none'; script-src 'self'";
+        Http::fake(['https://control.example.com/embed/assets/'.$asset => Http::response($script, 200, [
+            'Content-Type' => 'application/javascript; charset=utf-8',
+            'Cache-Control' => 'public, max-age=31536000, immutable',
+            'ETag' => '"worker-CNQS26Cp"', 'Content-Security-Policy' => $csp,
+            'Set-Cookie' => 'provider-secret=must-not-forward',
+        ])]);
+
+        $response = $this->get('/tropikal-connect/embed/assets/'.$asset)->assertOk()
+            ->assertHeader('Content-Type', 'application/javascript; charset=utf-8')
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertHeader('ETag', '"worker-CNQS26Cp"')->assertHeader('Content-Security-Policy', $csp);
+        $this->assertSame($script, $response->getContent());
+        $this->assertStringContainsString('immutable', (string) $response->headers->get('Cache-Control'));
+        $this->assertStringNotContainsString('provider-secret', (string) $response->headers->get('Set-Cookie'));
+        Http::assertSentCount(1);
+        Http::assertSent(fn (ClientRequest $request) => $request->url() === 'https://control.example.com/embed/assets/'.$asset
+            && ! $request->hasHeader('Cookie') && ! $request->hasHeader('Authorization') && ! $request->hasHeader(SignedRequest::SIGNATURE_HEADER));
+    }
+
+    public function test_dotted_worker_asset_names_do_not_allow_traversal_encoded_separators_or_other_extensions(): void
+    {
+        Http::fake(['*' => Http::response('must-not-be-used')]);
+        foreach ([
+            'proofOfWork..worker-CNQS26Cp.js', '.proofOfWork.worker-CNQS26Cp.js',
+            'proofOfWork.worker-CNQS26Cp.js.php', 'proofOfWork.worker-CNQS26Cp.json',
+            'proofOfWork.worker-CNQS26C.js', '../proofOfWork.worker-CNQS26Cp.js',
+            '%2e%2e%2fproofOfWork.worker-CNQS26Cp.js', 'proofOfWork%2fworker-CNQS26Cp.js',
+            'proofOfWork%5cworker-CNQS26Cp.js', '%252e%252e%252fproofOfWork.worker-CNQS26Cp.js',
+        ] as $asset) {
+            $this->get('/tropikal-connect/embed/assets/'.$asset)->assertNotFound();
+        }
+        Http::assertNothingSent();
     }
 
     public function test_asset_proxy_rejects_flat_mutable_and_unsafe_paths(): void

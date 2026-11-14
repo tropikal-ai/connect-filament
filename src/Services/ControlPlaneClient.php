@@ -21,8 +21,9 @@ class ControlPlaneClient
     {
         $body = $this->post($installation, $this->path('register_path'), $this->installationPayload($installation), $tokens->accessToken);
         $this->assertPublicChatManifestAccepted($body);
+        $historyProtocol = $body['_public_chat_capabilities_ack']['history_protocol'] ?? '';
         unset($body['_public_chat_capabilities_ack']);
-        $this->applyRegistrationResponse($installation, $body);
+        $this->applyRegistrationResponse($installation, $body, $historyProtocol);
 
         return $body;
     }
@@ -32,8 +33,9 @@ class ControlPlaneClient
         $tokens = $this->oauth->refreshAccessToken($installation);
         $body = $this->post($installation, $this->path('register_path'), $this->installationPayload($installation), $tokens->accessToken);
         $this->assertPublicChatManifestAccepted($body);
+        $historyProtocol = $body['_public_chat_capabilities_ack']['history_protocol'] ?? '';
         unset($body['_public_chat_capabilities_ack']);
-        $this->applyRegistrationResponse($installation, $body);
+        $this->applyRegistrationResponse($installation, $body, $historyProtocol);
 
         return $body;
     }
@@ -93,6 +95,7 @@ class ControlPlaneClient
             'protocol' => (string) $response->header('X-Tropikal-Public-Chat-Protocol'),
             'manifest_sha256' => (string) $response->header('X-Tropikal-Public-Chat-Manifest-Sha256'),
             'accepted_kinds' => $acceptedKinds === '' ? [] : explode(',', $acceptedKinds),
+            'history_protocol' => (string) $response->header('X-Tropikal-Embed-History-Protocol'),
         ];
 
         return $body;
@@ -114,7 +117,7 @@ class ControlPlaneClient
         return $payload;
     }
 
-    private function applyRegistrationResponse(Installation $installation, array $body): void
+    private function applyRegistrationResponse(Installation $installation, array $body, string $historyProtocol): void
     {
         $serverKey = (string) ($body['server_signing_key'] ?? '');
         if ($serverKey === '') {
@@ -143,6 +146,7 @@ class ControlPlaneClient
             'settings' => [
                 'resource_count' => count($body['allowed_resources'] ?? []),
                 'website' => $website,
+                ...($historyProtocol === 'embed-history.v1' ? ['embed_history_protocol' => $historyProtocol] : []),
             ],
         ])->save();
     }

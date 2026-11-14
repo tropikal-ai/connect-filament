@@ -14,20 +14,22 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Cookie;
 use TropikalAI\Connect\Domain\Security\SensitiveData;
 use TropikalAI\Connect\Domain\Security\SignedRequest;
+use TropikalAI\ConnectFilament\Contracts\PublicChatActorResolver;
 use TropikalAI\ConnectFilament\Models\Installation;
 use TropikalAI\ConnectFilament\Services\ControlPlaneClient;
 use TropikalAI\ConnectFilament\Services\EmbedChatRequestContext;
 use TropikalAI\ConnectFilament\Services\PublicActionService;
+use TropikalAI\ConnectFilament\Services\PublicChatMemberAuthentication;
 use TropikalAI\ConnectFilament\Services\UrlPolicy;
 
 class EmbedController extends Controller
 {
+    public const HASHED_ASSET_PATTERN = '(?:[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*-[A-Za-z0-9_-]{8,}\.(?:js|css)|iframe-[a-f0-9]{64}\.html)';
+
     private const STABLE_ASSETS = [
         'chat-widget.js' => 'application/javascript; charset=utf-8',
         'iframe.html' => 'text/html; charset=utf-8',
     ];
-
-    private const HASHED_ASSET_PATTERN = '/\A(?:[A-Za-z0-9][A-Za-z0-9_-]*-[A-Za-z0-9_-]{8,}\.(?:js|css)|iframe-[a-f0-9]{64}\.html)\z/';
 
     private const HISTORY_COOKIE_PATTERN = '/\A[a-f0-9]{64}\z/';
 
@@ -47,7 +49,7 @@ class EmbedController extends Controller
 
     public function hashedAsset(Request $request, string $asset): Response
     {
-        if (preg_match(self::HASHED_ASSET_PATTERN, $asset) !== 1) {
+        if (preg_match('/\A'.self::HASHED_ASSET_PATTERN.'\z/', $asset) !== 1) {
             abort(404);
         }
 
@@ -209,6 +211,41 @@ class EmbedController extends Controller
         );
     }
 
+    public function actionStatus(Request $request, ControlPlaneClient $controlPlane, PublicActionService $actions, string $action): Response|JsonResponse
+    {
+        return $actions->status($action, $request->json()->all(),
+            fn (string $path, string $body): Response|JsonResponse => $this->proxyPath(
+                $request, $controlPlane, 'POST', $path, $body, registrationRepair: false));
+    }
+
+    public function authIntent(Request $request, ControlPlaneClient $controlPlane): Response|JsonResponse
+    {
+        return $this->authIntentProxy($request, $controlPlane, resume: false);
+    }
+
+    public function authIntentResume(Request $request, ControlPlaneClient $controlPlane): Response|JsonResponse
+    {
+        if (app(PublicChatActorResolver::class)->resolve($request)?->type !== 'member') {
+            return app(PublicChatMemberAuthentication::class)->requiredResponse();
+        }
+
+        return $this->authIntentProxy($request, $controlPlane, resume: true);
+    }
+
+    private function authIntentProxy(Request $request, ControlPlaneClient $controlPlane, bool $resume): Response|JsonResponse
+    {
+        $body = $request->validate([
+            'session_id' => ['required', 'string', 'regex:/\A[A-Za-z0-9._:-]{1,128}\z/'],
+            'resume_token' => ['required', 'string', 'max:4096'],
+            'message' => ['required', 'string', 'max:16000'],
+            ...($resume ? ['intent' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/']] : []),
+        ]);
+
+        return $this->proxyPath($request, $controlPlane, 'POST',
+            '/api/connect-filament/embed/auth-intents'.($resume ? '/resume' : ''),
+            json_encode($body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), registrationRepair: false);
+    }
+
     private function historyProxy(Request $request, ControlPlaneClient $controlPlane, string $action, string $conversation = ''): Response|JsonResponse
     {
         [$token, $cookieName] = $this->historyToken($request);
@@ -239,7 +276,7 @@ class EmbedController extends Controller
         return $this->proxyPath($request, $controlPlane, $method, $path, $body);
     }
 
-    private function proxyPath(Request $request, ControlPlaneClient $controlPlane, string $method, string $path, string $body): Response|JsonResponse
+    private function proxyPath(Request $request, ControlPlaneClient $controlPlane, string $method, string $path, string $body, bool $registrationRepair = true): Response|JsonResponse
     {
         $installation = $this->activeEmbedInstallation();
         if (! $installation) {
@@ -253,14 +290,14 @@ class EmbedController extends Controller
             return $this->chatTemporaryUnavailableResponse();
         }
 
-        if ($this->shouldRepairRegistration($response)) {
+        if ($registrationRepair && $this->shouldRepairRegistration($response)) {
             $installation = $this->repairRegistration($installation, $controlPlane);
             if ($installation?->isApiReady()) {
                 $response = $this->proxyRequest($request, $installation, $method, $path, $query, $body);
             }
         }
 
-        return $this->proxyResponse($response->body(), $response->status(), $response->header('Content-Type'));
+        return $this->proxyResponse($response->body(), $response->status(), $response->header('Content-Type'), authorizationUnavailable: $registrationRepair);
     }
 
     private function proxyRequest(Request $request, Installation $installation, string $method, string $path, string $query, string $body): ClientResponse
@@ -326,9 +363,9 @@ class EmbedController extends Controller
         }
     }
 
-    private function proxyResponse(string $body, int $status, ?string $contentType): Response|JsonResponse
+    private function proxyResponse(string $body, int $status, ?string $contentType, bool $authorizationUnavailable = true): Response|JsonResponse
     {
-        if (in_array($status, [401, 403], true)) {
+        if ($authorizationUnavailable && in_array($status, [401, 403], true)) {
             return $this->chatUnavailableResponse();
         }
 

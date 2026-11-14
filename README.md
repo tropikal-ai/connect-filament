@@ -140,6 +140,33 @@ It needs a `query_tool` and no proposal or execution schemas. Its manifest retai
 still require a current member permit. Omitting `query_only`, or setting it to
 `false`, preserves the existing action contract and manifest hash.
 
+An action may opt into `execution_receipts: 'public-chat-receipt.v1'`. It then
+requires an idempotency key and chat session. Signed POST `status` requests carry
+the original execution input and key. They read the existing receipt without
+invoking the provider. Public receipts bind to the installation, chat session
+and exact request. Member receipts also bind to the original member. Status
+returns only bounded outcome references and error codes. A missing receipt is
+`unknown`, never evidence that an action did not run.
+
+The embed proxy supports POST `api/chat/actions/{action}/status`,
+`api/chat/auth-intents` and `api/chat/auth-intents/resume`. Recovery requests never
+repair registration or retry an action. App owns the short-lived, browser-bound
+login intent. Resume requires a current host member and returns an inert intent
+for a fresh query and review. It cannot book or confirm. A host can set
+`connect-filament.public_chat.member_login_path` to a constant relative login
+entry such as `/tropikal-connect/chat-return`. The default exposes no login hint;
+query strings, fragments and external login paths are rejected.
+
+Enabled member capabilities advertise that configured login path in their
+`authentication` manifest descriptor. The login hint grants no member authority.
+Hosts may opt into `connect-filament.public_chat.history_actor_context` after App
+supports `embed-history.v1`. Registration must also return the exact
+`X-Tropikal-Embed-History-Protocol: embed-history.v1` acknowledgement. Only then
+do bootstrap, history and session requests carry an opaque actor identity without
+a session-bound permit. Chat, actions and login intents retain the strict
+`embed-chat` context and current session permits. The browser history cookie
+stays unchanged across login so App can separately verify a guest continuation.
+
 ## Resource Declaration Example
 
 Discovery can be supplemented with explicit resources in `config/connect-filament.php`:

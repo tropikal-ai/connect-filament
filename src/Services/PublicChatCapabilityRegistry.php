@@ -53,6 +53,9 @@ final class PublicChatCapabilityRegistry
         $intentAliases = $this->validateIntentAliases($capability['intent_aliases'] ?? []);
         $query = $capability['query_tool'] ?? null;
         $queryOnly = $capability['query_only'] ?? false;
+        $receipts = $capability['execution_receipts'] ?? null;
+        $authentication = $audience === 'member' && ($capability['enabled_by_default'] ?? true) === true
+            ? app(PublicChatMemberAuthentication::class)->descriptor() : null;
         if (
             preg_match(self::KIND_PATTERN, $kind) !== 1
             || $title === '' || strlen($title) > 120
@@ -64,6 +67,7 @@ final class PublicChatCapabilityRegistry
             || ! is_string($query['description'] ?? null)
             || ! is_array($query['input_schema'] ?? null)
             || (array_key_exists('query_only', $capability) && ! is_bool($capability['query_only']))
+            || (array_key_exists('execution_receipts', $capability) && ($receipts !== 'public-chat-receipt.v1' || $queryOnly))
             || (! $queryOnly && (! is_array($capability['proposal_input_schema'] ?? null)
                 || ! is_array($capability['execution_input_schema'] ?? null)))
         ) {
@@ -77,6 +81,8 @@ final class PublicChatCapabilityRegistry
             'audience' => $audience,
             'enabled_by_default' => ($capability['enabled_by_default'] ?? true) === true,
             ...($intentAliases === [] ? [] : ['intent_aliases' => $intentAliases]),
+            ...($receipts === null ? [] : ['execution_receipts' => $receipts]),
+            ...($authentication === null ? [] : ['authentication' => $authentication]),
             'query_tool' => [
                 'name' => (string) $query['name'],
                 'description' => substr((string) $query['description'], 0, 500),

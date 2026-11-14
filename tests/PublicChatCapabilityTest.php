@@ -15,6 +15,38 @@ use TropikalAI\ConnectFilament\Services\PublicChatCapabilityRegistry;
 
 final class PublicChatCapabilityTest extends TestCase
 {
+    public function test_only_enabled_member_manifests_advertise_the_trusted_login_descriptor(): void
+    {
+        $provider = $this->bindProvider();
+        $registry = new PublicChatCapabilityRegistry($provider);
+        $before = $registry->manifestHash();
+        $this->assertArrayNotHasKey('authentication', $registry->manifest()[0]);
+        config()->set('connect-filament.public_chat.member_login_path', '/tropikal-connect/chat-return');
+        $this->assertSame(['schema' => 'member_login.v1', 'login_path' => '/tropikal-connect/chat-return'], $registry->manifest()[0]['authentication']);
+        $provider->overrides = ['audience' => 'public'];
+        $this->assertArrayNotHasKey('authentication', $registry->manifest()[0]);
+        $provider->overrides = ['enabled_by_default' => false];
+        $this->assertArrayNotHasKey('authentication', $registry->manifest()[0]);
+        $provider->overrides = [];
+        config()->set('connect-filament.public_chat.member_login_path', null);
+        $this->assertSame($before, $registry->manifestHash());
+    }
+
+    public function test_member_login_hint_only_advertises_a_configured_constant_host_path(): void
+    {
+        $this->bindProvider();
+        $installation = $this->connectedInstallation();
+        $path = "/api/tropikal-connect/installations/{$installation->public_id}/public-chat-capabilities/aoss.member_training.book.v1/query";
+        config()->set('connect-filament.public_chat.member_login_path', '/tropikal-connect/chat-return');
+        $this->signedJson($installation, 'POST', $path, ['input' => ['days' => 14]], 'member_login_path')
+            ->assertUnauthorized()->assertJsonPath('authentication', ['schema' => 'member_login.v1', 'login_path' => '/tropikal-connect/chat-return']);
+        foreach ([null, 'https://evil.invalid', '//evil.invalid', '/login?token=opaque', '/login#fragment'] as $index => $invalid) {
+            config()->set('connect-filament.public_chat.member_login_path', $invalid);
+            $this->signedJson($installation, 'POST', $path, ['input' => ['days' => 14]], 'bad_member_login_'.$index)
+                ->assertUnauthorized()->assertExactJson(['error' => 'member_authentication_required']);
+        }
+    }
+
     public function test_registered_capabilities_are_advertised_and_executed_through_the_signed_boundary(): void
     {
         $this->bindProvider();
@@ -111,6 +143,7 @@ final class PublicChatCapabilityTest extends TestCase
     public function test_capability_sync_requires_an_exact_control_plane_manifest_acknowledgement(): void
     {
         $this->bindProvider();
+        config()->set('connect-filament.public_chat.member_login_path', '/tropikal-connect/chat-return');
         $installation = $this->connectedInstallation();
         $registry = app(PublicChatCapabilityRegistry::class);
         Http::fake([
@@ -129,12 +162,16 @@ final class PublicChatCapabilityTest extends TestCase
                 'X-Tropikal-Public-Chat-Protocol' => 'public_chat_actions.v1',
                 'X-Tropikal-Public-Chat-Manifest-Sha256' => $registry->manifestHash(),
                 'X-Tropikal-Public-Chat-Accepted-Kinds' => 'aoss.member_training.book.v1',
+                'X-Tropikal-Embed-History-Protocol' => 'embed-history.v1',
             ]),
         ]);
 
         app(ControlPlaneClient::class)->syncCapabilities($installation);
 
         $this->assertSame('srv_123', $installation->fresh()->control_plane_installation_id);
+        $this->assertSame('embed-history.v1', $installation->fresh()->settings['embed_history_protocol']);
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://control.example.com/api/connect-filament/installations'
+            && $request['public_chat_capabilities'][0]['authentication'] === ['schema' => 'member_login.v1', 'login_path' => '/tropikal-connect/chat-return']);
     }
 
     private function bindProvider(): object
@@ -142,6 +179,8 @@ final class PublicChatCapabilityTest extends TestCase
         $provider = new class implements PublicChatCapabilityProvider
         {
             public int $executeCount = 0;
+
+            public array $overrides = [];
 
             public function capabilities(): array
             {
@@ -172,6 +211,7 @@ final class PublicChatCapabilityTest extends TestCase
                         'required' => ['option_ref'],
                         'properties' => ['option_ref' => ['type' => 'string', 'minLength' => 1]],
                     ],
+                    ...$this->overrides,
                 ]];
             }
 

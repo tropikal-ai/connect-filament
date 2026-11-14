@@ -23,6 +23,7 @@ final readonly class MutationIdentity
         string $path,
         string $query,
         string $body,
+        ?string $authorityContext = null,
     ): self {
         $key = trim($key);
         if (! preg_match(self::KEY_PATTERN, $key)) {
@@ -34,15 +35,16 @@ final readonly class MutationIdentity
             throw new \InvalidArgumentException('The mutation operation is required.');
         }
 
+        $parts = [strtoupper($method), '/'.ltrim($path, '/'), $query, hash('sha256', $body)];
+        if ($authorityContext !== null) {
+            $parts[] = 'authority.v1';
+            $parts[] = hash('sha256', $authorityContext);
+        }
+
         return new self(
             key: $key,
             operation: $operation,
-            requestHash: hash('sha256', implode("\n", [
-                strtoupper($method),
-                '/'.ltrim($path, '/'),
-                $query,
-                hash('sha256', $body),
-            ])),
+            requestHash: hash('sha256', implode("\n", $parts)),
         );
     }
 }
