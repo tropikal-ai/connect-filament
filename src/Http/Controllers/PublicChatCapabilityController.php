@@ -35,6 +35,9 @@ final class PublicChatCapabilityController
         if ($capability === null || ! in_array($operation, ['query', 'execute'], true)) {
             return response()->json(['error' => 'capability_not_found'], 404);
         }
+        if ($operation === 'execute' && ($capability['query_only'] ?? false)) {
+            return response()->json(['error' => 'query_only_capability'], 405);
+        }
         $payload = $request->json()->all();
         if (! is_array($payload) || array_keys($payload) !== ['input'] || ! is_array($payload['input'])) {
             return response()->json(['error' => 'invalid_capability_input'], 422);

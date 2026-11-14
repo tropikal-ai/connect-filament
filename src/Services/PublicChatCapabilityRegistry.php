@@ -52,6 +52,7 @@ final class PublicChatCapabilityRegistry
         $audience = (string) ($capability['audience'] ?? '');
         $intentAliases = $this->validateIntentAliases($capability['intent_aliases'] ?? []);
         $query = $capability['query_tool'] ?? null;
+        $queryOnly = $capability['query_only'] ?? false;
         if (
             preg_match(self::KIND_PATTERN, $kind) !== 1
             || $title === '' || strlen($title) > 120
@@ -62,8 +63,9 @@ final class PublicChatCapabilityRegistry
             || preg_match('/\A[a-z][a-z0-9_]{2,63}\z/', (string) ($query['name'] ?? '')) !== 1
             || ! is_string($query['description'] ?? null)
             || ! is_array($query['input_schema'] ?? null)
-            || ! is_array($capability['proposal_input_schema'] ?? null)
-            || ! is_array($capability['execution_input_schema'] ?? null)
+            || (array_key_exists('query_only', $capability) && ! is_bool($capability['query_only']))
+            || (! $queryOnly && (! is_array($capability['proposal_input_schema'] ?? null)
+                || ! is_array($capability['execution_input_schema'] ?? null)))
         ) {
             return null;
         }
@@ -80,8 +82,10 @@ final class PublicChatCapabilityRegistry
                 'description' => substr((string) $query['description'], 0, 500),
                 'input_schema' => $query['input_schema'],
             ],
-            'proposal_input_schema' => $capability['proposal_input_schema'],
-            'execution_input_schema' => $capability['execution_input_schema'],
+            ...($queryOnly ? ['query_only' => true] : [
+                'proposal_input_schema' => $capability['proposal_input_schema'],
+                'execution_input_schema' => $capability['execution_input_schema'],
+            ]),
         ];
     }
 
