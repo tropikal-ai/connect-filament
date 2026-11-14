@@ -30,7 +30,7 @@ jobs:
   ci:
     name: CI green
     if: always()
-    needs: [quality]
+    needs: [quality, release-policy]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -38,3 +38,12 @@ jobs:
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
         run: exit 1
       - run: echo "All quality jobs passed."
+
+  release-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - run: python3 -B -m unittest discover -s scripts -p 'test_release_package.py' -v
