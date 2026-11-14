@@ -1,0 +1,79 @@
+{
+  "legacy_missing": {
+    "http": 404,
+    "body": {},
+    "emails": 1,
+    "status": "email_delivered"
+  },
+  "legacy_method": {
+    "http": 405,
+    "body": {},
+    "emails": 1,
+    "status": "email_delivered"
+  },
+  "disabled": {
+    "http": 200,
+    "body": {
+      "version": "customer_notifications.v1",
+      "supported": false,
+      "kinds": []
+    },
+    "emails": 1,
+    "status": "email_delivered"
+  },
+  "future_version": {
+    "http": 200,
+    "body": {
+      "version": "customer_notifications.v2",
+      "supported": true,
+      "kinds": []
+    },
+    "emails": 0,
+    "status": "queued"
+  },
+  "unexpected_envelope": {
+    "http": 200,
+    "body": {
+      "data": {
+        "version": "customer_notifications.v1",
+        "supported": true,
+        "kinds": []
+      }
+    },
+    "emails": 0,
+    "status": "queued"
+  },
+  "additive_current": {
+    "http": 200,
+    "body": {
+      "version": "customer_notifications.v1",
+      "supported": true,
+      "future_optional": true,
+      "kinds": [
+        {
+          "kind": "trial_requested",
+          "locales": [
+            "de"
+          ],
+          "whatsapp": true,
+          "sms": true,
+          "future_optional": "ignored"
+        }
+      ]
+    },
+    "emails": 0,
+    "status": "delivered"
+  },
+  "capability_outage": {
+    "http": 503,
+    "body": {},
+    "emails": 1,
+    "status": "email_delivered"
+  },
+  "configuration_denied": {
+    "http": 401,
+    "body": {},
+    "emails": 1,
+    "status": "email_delivered"
+  }
+}

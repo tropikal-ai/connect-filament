@@ -133,6 +133,13 @@ Deployment fails unless App acknowledges the exact protocol, normalized
 manifest hash, and accepted action kinds. Public
 chat actions never fall back to discovered model writes or owner capabilities.
 
+Set `query_only` to the boolean `true` for a capability that only returns facts.
+It needs a `query_tool` and no proposal or execution schemas. Its manifest retains
+`query_only: true`, and the signed execute endpoint rejects it with HTTP 405 and
+`query_only_capability` before admitting an actor or mutation. Member queries
+still require a current member permit. Omitting `query_only`, or setting it to
+`false`, preserves the existing action contract and manifest hash.
+
 ## Resource Declaration Example
 
 Discovery can be supplemented with explicit resources in `config/connect-filament.php`:
