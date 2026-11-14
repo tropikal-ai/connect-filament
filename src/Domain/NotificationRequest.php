@@ -26,7 +26,8 @@ final readonly class NotificationRequest
             throw new \InvalidArgumentException('Invalid customer notification request.');
         }
         foreach ($variables as $key => $value) {
-            if ((! is_string($key) && ! is_int($key)) || ! is_string($value) || strlen((string) $key) > 120 || mb_strlen($value) > 2000) {
+            if ((! is_string($key) && ! is_int($key)) || ! preg_match('/^[A-Za-z0-9_]{1,120}$/D', (string) $key)
+                || ! is_string($value) || mb_strlen($value) > 2000) {
                 throw new \InvalidArgumentException('Notification variables must be a bounded string map.');
             }
         }

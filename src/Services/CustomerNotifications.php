@@ -232,7 +232,7 @@ class CustomerNotifications
     private function call(Installation $installation, string $method, string $suffix, ?array $payload = null): Response
     {
         $path = self::PATH.$suffix;
-        $body = $payload === null ? '' : json_encode($payload === [] ? (object) [] : $payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $body = $payload === null ? '' : json_encode($payload === [] ? (object) [] : $payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         return Http::withHeaders([...SignedRequest::headers(
             (string) $installation->server_signing_key_encrypted, (string) $installation->public_id, $method, $path, '', $body,

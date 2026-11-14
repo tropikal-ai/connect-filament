@@ -15,7 +15,7 @@ return new class extends Migration
             $table->foreignId('installation_id')->constrained('connect_filament_installations')->cascadeOnDelete();
             $table->string('event_id', 128);
             $table->string('request_hash', 64);
-            $table->text('request_payload');
+            $table->longText('request_payload');
             $table->text('context');
             $table->string('status', 40)->default('queued')->index();
             $table->string('channel', 20)->nullable();

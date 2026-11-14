@@ -315,4 +315,53 @@ class CustomerNotificationsTest extends TestCase
         $this->assertFalse(app(CustomerNotifications::class)->process($delivery->id));
         Http::assertNothingSent();
     }
+
+    public function test_maximum_unicode_request_is_an_object_below_the_wire_limit(): void
+    {
+        $variables = [];
+        foreach (range(1, 50) as $index) {
+            $variables['field_'.str_repeat('x', 111).sprintf('%03d', $index)] = str_repeat('😀', 2000);
+        }
+        $request = new NotificationRequest(str_repeat('e', 128), 't'.str_repeat('x', 119), 'de', '+41791234567', true, true,
+            $variables, str_repeat('😀', 1600), true);
+        Http::fake([
+            '*/capabilities' => Http::response(['version' => 'customer_notifications.v1', 'supported' => true,
+                'kinds' => [['kind' => $request->kind, 'locales' => ['de']]]]),
+            '*/deliveries' => Http::response(['version' => 'customer_notifications.v1', 'event_id' => $request->eventId,
+                'status' => 'pending', 'channel' => 'whatsapp']),
+        ]);
+        $installation = Installation::query()->create(['status' => Installation::STATUS_CONNECTED,
+            'site_url' => 'https://cms.example.com', 'control_plane_url' => 'https://control.example.com',
+            'server_signing_key_encrypted' => 'secret']);
+        $delivery = app(CustomerNotifications::class)->dispatchAfterCommit($installation, $request);
+        $this->runDelivery($delivery);
+        Http::assertSent(function ($sent) use ($variables): bool {
+            if ($sent->method() !== 'POST') {
+                return false;
+            }
+            $body = $sent->body();
+            $this->assertLessThanOrEqual(512 * 1024, strlen($body));
+            $this->assertStringContainsString('😀', $body);
+            $decoded = json_decode($body, flags: JSON_THROW_ON_ERROR);
+            $this->assertInstanceOf(\stdClass::class, $decoded->variables);
+            $this->assertSame($variables, (array) $decoded->variables);
+            if ($path = getenv('CONNECT_NOTIFICATION_UNICODE_FIXTURE')) {
+                file_put_contents($path, $body);
+            }
+
+            return true;
+        });
+    }
+
+    public function test_variable_names_reject_punctuation_and_empty_keys(): void
+    {
+        foreach (['', 'field.name', 'field-name', str_repeat('a', 121)] as $key) {
+            try {
+                new NotificationRequest('trial_1', 'trial_requested', 'de', '+41791234567', true, true, [$key => 'value']);
+                $this->fail('Invalid variable key accepted');
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
 }
