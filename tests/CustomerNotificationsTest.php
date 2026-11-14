@@ -282,4 +282,37 @@ class CustomerNotificationsTest extends TestCase
         $this->assertNull($delivery->fresh()->submission_started_at);
         Http::assertSentCount(2);
     }
+
+    public function test_capability_network_failure_uses_email_without_admitting_remote_delivery(): void
+    {
+        Http::fake(['*/capabilities' => Http::failedConnection()]);
+        $delivery = $this->delivery();
+        $this->runDelivery($delivery);
+        $this->runDelivery($delivery);
+        $this->assertSame(1, $this->emails);
+        $this->assertNull($delivery->fresh()->submission_started_at);
+        $this->assertSame('email_delivered', $delivery->fresh()->status);
+        Http::assertNotSent(fn ($request) => $request->method() === 'POST');
+    }
+
+    public function test_phone_only_capability_outage_retries_without_email_or_admission(): void
+    {
+        Http::fake(['*/capabilities' => Http::response([], 503)]);
+        $delivery = $this->delivery();
+        $payload = $delivery->request_payload;
+        $payload['permissions']['email'] = false;
+        $delivery->forceFill(['request_payload' => $payload])->save();
+        $this->assertTrue(app(CustomerNotifications::class)->process($delivery->id));
+        $this->assertSame('queued', $delivery->fresh()->status);
+        $this->assertNull($delivery->fresh()->submission_started_at);
+        $this->assertSame(0, $this->emails);
+    }
+
+    public function test_deleted_deliveries_are_not_requeued(): void
+    {
+        $delivery = $this->delivery();
+        $delivery->delete();
+        $this->assertFalse(app(CustomerNotifications::class)->process($delivery->id));
+        Http::assertNothingSent();
+    }
 }

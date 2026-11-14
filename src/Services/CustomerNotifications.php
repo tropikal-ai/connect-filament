@@ -52,7 +52,7 @@ class CustomerNotifications
             ->where(fn ($query) => $query->whereNull('processing_until')->orWhere('processing_until', '<=', now()))
             ->update(['processing_until' => now()->addSeconds(120)]);
         if ($lease !== 1) {
-            return true;
+            return NotificationDelivery::query()->whereKey($id)->exists();
         }
         try {
             return $this->advance($id);
@@ -83,12 +83,26 @@ class CustomerNotifications
             }
             $submitting = false;
             if ($delivery->submission_started_at === null) {
-                $capabilities = $this->call($installation, 'GET', '/capabilities');
+                try {
+                    $capabilities = $this->call($installation, 'GET', '/capabilities');
+                } catch (Throwable) {
+                    return ($delivery->request_payload['permissions']['email'] ?? false)
+                        ? $this->legacyEmail($delivery, $installation) : true;
+                }
                 if (in_array($capabilities->status(), [404, 405], true)
                     || ($capabilities->successful() && ($capabilities->json('supported') === false))) {
                     return $this->legacyEmail($delivery, $installation);
                 }
-                if (! $capabilities->successful() || $capabilities->json('version') !== self::VERSION || $capabilities->json('supported') !== true) {
+                if (! $capabilities->successful()) {
+                    if (in_array($capabilities->status(), [401, 403], true)) {
+                        Log::warning('Customer notification connection requires configuration review.',
+                            ['event_id' => $delivery->event_id, 'http_status' => $capabilities->status()]);
+                    }
+
+                    return ($delivery->request_payload['permissions']['email'] ?? false)
+                        ? $this->legacyEmail($delivery, $installation) : true;
+                }
+                if ($capabilities->json('version') !== self::VERSION || $capabilities->json('supported') !== true) {
                     return true;
                 }
                 $kinds = $capabilities->json('kinds');

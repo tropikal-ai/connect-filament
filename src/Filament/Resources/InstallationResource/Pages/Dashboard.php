@@ -7,9 +7,11 @@ namespace TropikalAI\ConnectFilament\Filament\Resources\InstallationResource\Pag
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 use TropikalAI\ConnectFilament\Filament\Resources\InstallationResource;
 use TropikalAI\ConnectFilament\Models\Installation;
+use TropikalAI\ConnectFilament\Models\NotificationDelivery;
 use TropikalAI\ConnectFilament\Services\CapabilityGrantManager;
 use TropikalAI\ConnectFilament\Services\ControlPlaneClient;
 use TropikalAI\ConnectFilament\Services\ResourceRegistry;
@@ -109,6 +111,19 @@ class Dashboard extends Page
     public function status(): array
     {
         return $this->installation?->safeStatus() ?? ['status' => Installation::STATUS_NOT_CONNECTED];
+    }
+
+    public function notificationStatus(): array
+    {
+        $enabled = (bool) config('connect-filament.notifications.enabled', false);
+        $available = $enabled && Schema::hasTable('connect_filament_notification_deliveries');
+        $deliveries = $available && $this->installation !== null
+            ? NotificationDelivery::query()->where('installation_id', $this->installation->id)
+                ->latest('id')->limit(10)->get(['id', 'event_id', 'status', 'channel', 'email_status', 'updated_at'])
+                ->map(fn (NotificationDelivery $delivery) => [...$delivery->safeStatus(), 'updated_at' => $delivery->updated_at?->toIso8601String()])->all()
+            : [];
+
+        return ['enabled' => $enabled, 'available' => $available, 'deliveries' => $deliveries];
     }
 
     public function setOwnerActionGrant(string $slug, string $action, mixed $enabled): void

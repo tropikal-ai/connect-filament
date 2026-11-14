@@ -1,0 +1,57 @@
+name: Publish package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: New stable tag (for example v0.2.22)
+        required: true
+        type: string
+      expected_sha:
+        description: Exact verified protected main commit (full SHA)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-package
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    if: github.repository == 'tropikal-ai/connect-filament' && github.ref == 'refs/heads/main'
+    uses: tropikal-ai/connect/.github/workflows/php-quality.yml@c7b27d5da27ffe24fb114b51d3c979d8be43291a
+    with:
+      pre-install: composer config repositories.connect vcs https://github.com/tropikal-ai/connect.git
+
+  policy:
+    if: github.repository == 'tropikal-ai/connect-filament' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - run: python3 -B -m unittest discover -s scripts -p 'test_release_package.py' -v
+
+  publish:
+    needs: [quality, policy]
+    if: github.repository == 'tropikal-ai/connect-filament' && github.ref == 'refs/heads/main' && needs.quality.result == 'success' && needs.policy.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - name: Publish and verify exact source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          CI_RESULT: ${{ needs.quality.result }}
+          POLICY_RESULT: ${{ needs.policy.result }}
+        run: python3 -B scripts/release_package.py
