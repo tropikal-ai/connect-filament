@@ -54,6 +54,8 @@ final class PublicChatCapabilityRegistry
         $query = $capability['query_tool'] ?? null;
         $queryOnly = $capability['query_only'] ?? false;
         $receipts = $capability['execution_receipts'] ?? null;
+        $authentication = $audience === 'member' && ($capability['enabled_by_default'] ?? true) === true
+            ? app(PublicChatMemberAuthentication::class)->descriptor() : null;
         if (
             preg_match(self::KIND_PATTERN, $kind) !== 1
             || $title === '' || strlen($title) > 120
@@ -80,6 +82,7 @@ final class PublicChatCapabilityRegistry
             'enabled_by_default' => ($capability['enabled_by_default'] ?? true) === true,
             ...($intentAliases === [] ? [] : ['intent_aliases' => $intentAliases]),
             ...($receipts === null ? [] : ['execution_receipts' => $receipts]),
+            ...($authentication === null ? [] : ['authentication' => $authentication]),
             'query_tool' => [
                 'name' => (string) $query['name'],
                 'description' => substr((string) $query['description'], 0, 500),

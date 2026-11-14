@@ -21,14 +21,18 @@ final readonly class EmbedChatRequestContext
     {
         $secret = (string) $installation->server_signing_key_encrypted;
         $payload = json_decode($body, true);
-        $sessionId = is_array($payload) && is_string($payload['session_id'] ?? null)
+        $settings = is_array($installation->settings) ? $installation->settings : [];
+        $history = config('connect-filament.public_chat.history_actor_context') === true
+            && ($settings['embed_history_protocol'] ?? null) === 'embed-history.v1'
+            && $request->routeIs('connect-filament.embed.chat.bootstrap', 'connect-filament.embed.chat.history.*', 'connect-filament.embed.chat.session');
+        $sessionId = ! $history && is_array($payload) && is_string($payload['session_id'] ?? null)
             ? trim($payload['session_id']) : '';
         $actorHeaders = [];
         $actorIdentity = '';
-        if ($sessionId !== '' && preg_match('/\A[A-Za-z0-9._:-]{1,128}\z/', $sessionId) === 1) {
+        if ($history || ($sessionId !== '' && preg_match('/\A[A-Za-z0-9._:-]{1,128}\z/', $sessionId) === 1)) {
             $actor = $this->actors->resolve($request);
             if ($actor !== null) {
-                $actorHeaders = [
+                $actorHeaders = $history ? [] : [
                     PublicChatActorPermit::HEADER => $this->permits->issue($actor, $installation, $sessionId),
                     PublicChatActorPermit::SESSION_HEADER => $sessionId,
                 ];
@@ -46,7 +50,7 @@ final readonly class EmbedChatRequestContext
         $historyToken = $request->cookie($cookieName);
         $context = json_encode([
             'v' => 1,
-            'kind' => 'embed-chat',
+            'kind' => $history ? 'embed-history' : 'embed-chat',
             'visitor_history_token' => is_string($historyToken) && preg_match('/\A[a-f0-9]{64}\z/', $historyToken) === 1
                 ? $historyToken : '',
             'actor_identity' => $actorIdentity,

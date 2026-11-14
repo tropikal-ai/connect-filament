@@ -157,6 +157,16 @@ for a fresh query and review. It cannot book or confirm. A host can set
 entry such as `/tropikal-connect/chat-return`. The default exposes no login hint;
 query strings, fragments and external login paths are rejected.
 
+Enabled member capabilities advertise that configured login path in their
+`authentication` manifest descriptor. The login hint grants no member authority.
+Hosts may opt into `connect-filament.public_chat.history_actor_context` after App
+supports `embed-history.v1`. Registration must also return the exact
+`X-Tropikal-Embed-History-Protocol: embed-history.v1` acknowledgement. Only then
+do bootstrap, history and session requests carry an opaque actor identity without
+a session-bound permit. Chat, actions and login intents retain the strict
+`embed-chat` context and current session permits. The browser history cookie
+stays unchanged across login so App can separately verify a guest continuation.
+
 ## Resource Declaration Example
 
 Discovery can be supplemented with explicit resources in `config/connect-filament.php`:
